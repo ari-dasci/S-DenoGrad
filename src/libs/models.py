@@ -28,26 +28,25 @@ Description:
 import os
 import sys
 
-CURRENT_DIR = os.getcwd()
-FOLDERS = CURRENT_DIR.split(os.sep)
-TESIS_FOLDER_INDEX = FOLDERS.index('Tesis')
-CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
-CURRENT_DIR = os.path.join(CURRENT_DIR, 'noise_reduction')
-LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-assert os.path.exists(LIBS_PATH)
-sys.path.append(LIBS_PATH)
-
 # Libraries
 # ---------------------------------------------------------------------------- #
 import copy
 import torch
-import torch.nn as nn
+from torch import nn
 import numpy as np
 from tqdm import tqdm
-import torch.nn.functional as F
 # Locals
 from config import Colors
 from utils import *
+
+CURRENT_DIR = os.getcwd()
+FOLDERS = CURRENT_DIR.split(os.sep)
+TESIS_FOLDER_INDEX = FOLDERS.index('Tesis')
+CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
+CURRENT_DIR = os.path.join(CURRENT_DIR, 'S-noise-gradient')
+LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
+assert os.path.exists(LIBS_PATH)
+sys.path.append(LIBS_PATH)
 
 
 # Classes
@@ -319,21 +318,21 @@ class Trainer:
             self.__on_train_epoch_start(epoch, verbose=verbose)
 
             # Iterate over batches
-            batches_progress_bat = tqdm(
+            batches_progress_bar = tqdm(
                 self.train_dataloader,
                 disable=not verbose,
                 leave=False,
                 unit='batch',
                 desc='Batches loop',
             )
-            for batch_x, batch_y in batches_progress_bat:
+            for batch_x, batch_y in batches_progress_bar:
                 train_loss += self.__on_train_batch_start(
                     batch_x,
                     batch_y
                 ) * len(batch_x)
 
                 if verbose:
-                    batches_progress_bat.set_postfix_str(f"Train loss: {train_loss / len(self.train_dataloader.dataset)}")
+                    batches_progress_bar.set_postfix_str(f"Train loss: {train_loss / len(self.train_dataloader.dataset)} - Val loss: {val_losses[-1] if val_losses else 'N/A'}")
 
             # Calculate average loss
             train_loss /= len(self.train_dataloader.dataset)
@@ -372,7 +371,12 @@ class Trainer:
 
             # LR Scheduler
             if self.epoch_scheduler:
-                self.epoch_scheduler.step()
+                try:
+                    self.epoch_scheduler.step()
+                except Exception as e:
+                    self.epoch_scheduler.step(val_loss)
+                except:
+                    pass
 
 
         return self.best_model, train_losses, val_losses, self.train_loss_when_best_val_loss, self.best_val_loss

@@ -35,7 +35,8 @@ class SlidingWindowDataset(Dataset):
             mode (str, optional): range or discrete. Defaults to 'range'.
                     Mode in which the future is interpreted.
                     - range: the future is of type int; all instants up to it are predicted.
-                    - discrete: the future is of type list(int); the indicated futures are predicted.
+                    - discrete: the future is of type list(int);
+                        the indicated futures are predicted.
             cnn (bool, optional): indicates if the LSTM model to be used
                     has convolutional layers in the input. Defaults to False.
         """
@@ -49,18 +50,18 @@ class SlidingWindowDataset(Dataset):
 
     def __len__(self):
         if self.mode == 'range':
-            return len(self.X) - self.window_size - self.future
+            return len(self.X) - self.window_size - self.future + 1
         elif self.mode == 'discrete':
             return len(self.X) - self.window_size - self.future[-1]
 
 
     def __getitem__(self, idx):
-        x = self.X.iloc[idx:idx + self.window_size]
+        x = self.X.iloc[idx:idx + self.window_size].values
         if self.is_cnn:
             x = x.T
 
         if self.mode == 'range':
-            y = self.Y.iloc[idx + self.window_size : idx + self.window_size + self.future]
+            y = self.Y.iloc[idx + self.window_size : idx + self.window_size + self.future].values
         elif self.mode == 'discrete':
             y = np.array([self.Y.iloc[idx + self.window_size + i_fut] for i_fut in self.future])
 

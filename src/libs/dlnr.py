@@ -228,7 +228,7 @@ class DLNoiseReduction():
             y (np.array): array-like of shape (n_samples, n_targets).
                 The target values (real numbers).
         """
-        assert len(X.shape) == 2 and len(y.shape)==2, 'X and y must be 2D arrays'
+        # assert len(X.shape) == 2 and len(y.shape)==2, 'X and y must be 2D arrays'
         self._x_original = X.copy()
         self._y_original = y.copy()
 
