@@ -18,7 +18,8 @@ class DLNoiseReduction():
     def __init__(
         self,
         model: nn.Module,
-        criterion: nn.modules.loss._Loss
+        criterion: nn.modules.loss._Loss,
+        is_rnn: bool = False
     ):
         """
         Initialize the DLNoiseReduction class.
@@ -26,16 +27,23 @@ class DLNoiseReduction():
         Args:
             model (nn.Module): neural network model already trained.
             criterion (nn.modules.loss._Loss): loss function.
+            rnn (bool): indicates if the model is a rnn. Deafult False.
         """
         self._model = model
         self._criterion = criterion
         self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self._x_original = None
         self._y_original = None
+        self.is_rnn = is_rnn
 
         # Freeze the model to not change its performance during the reduction-noise process.
+        if self.is_rnn:
+            self.model.train()
+        else:
+            self.model.eval()
+
         for param in self._model.parameters():
-            param.requires_grad = False
+            param.requires_grad = self.is_rnn
 
 
     # Getters
@@ -163,7 +171,6 @@ class DLNoiseReduction():
             x (np.ndarray): denoised X input data.
             y (np.ndarray): donoised y input data.
         """
-        # Print 1st subplot
         axes[0].scatter(
             self._x_original,
             self._y_original,
@@ -174,7 +181,6 @@ class DLNoiseReduction():
         )
         axes[0].legend()
         axes[0].set_title('Original Data')
-        # Print 2nd subplot
         axes[1].scatter(
             x,
             y,
@@ -228,12 +234,125 @@ class DLNoiseReduction():
             y (np.array): array-like of shape (n_samples, n_targets).
                 The target values (real numbers).
         """
-        # assert len(X.shape) == 2 and len(y.shape)==2, 'X and y must be 2D arrays'
-        self._x_original = X.copy()
-        self._y_original = y.copy()
+        self._x_original = X.copy()#.reshape(-1, X.shape[-1]).copy()
+        self._y_original = y.copy()#.reshape(-1, y.shape[-1]).copy()
 
 
     def transform(
+        self,
+        nrr: float=0.05,
+        nr_threshold: float=0.01,
+        max_epochs: int=100,
+        plot_progress: bool=False,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Decrease the noise level in the input data (x and y).
+        If plot_progress is True, the process will take considerably more time.
+
+        Args:
+            nrr (float): noise reduction rate. Default 0.0005.
+            nr_threshold (float): if the difference between the f(x') and y is
+                less than nr_threshold the gradient will be applied no more. Default 0.01.
+            max_epochs (int): maximum number of epochs. Default 100.
+            plot_progress (bool): whether to plot the noise reduction progress or not.
+                Default False.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
+        """
+        x_tensor = self._x_original.copy()
+        y_tensor = self._y_original.copy()
+
+        if plot_progress:
+            if self._x_original.shape[1] == 2:
+                fig, axes = plt.subplots(1, 2, subplot_kw={'projection': '3d'}, figsize=(15, 8))
+            elif self._x_original.shape[1] == 1:
+                fig, axes = plt.subplots(1, 2, figsize=(15, 8))
+            else:
+                raise ValueError('The input data must have 1 or 2 features in order to plotted')
+
+        epoch = 0
+        apply_gradient = [True, True]
+        while epoch < max_epochs and sum(apply_gradient) > 0:
+            x_tensor = torch.tensor(x_tensor, requires_grad=True)
+            y_tensor = torch.tensor(y_tensor, requires_grad=True)
+
+            # Calculate the gradients for X and Y performing a backpropagation step.
+            self._criterion.zero_grad()
+
+            y_predicted = self._model.forward(
+                x_tensor.float().to(self._device)
+            )
+            y_predicted.requires_grad_(True)
+            y_predicted.retain_grad()
+            loss = self._criterion(
+                y_predicted,
+                y_tensor.float().to(self._device)
+            )
+            loss.backward()
+
+            # Decide if the gradient is going to be applied or not
+            y_predicted_array = y_predicted.detach().cpu().numpy()
+            y_tensor_array = y_tensor.detach().cpu().numpy()
+            apply_gradient = np.abs(y_predicted_array - y_tensor_array)
+            apply_gradient = apply_gradient > nr_threshold
+
+            # Get the calculated gradients
+            grad_l_x = x_tensor.grad.detach().cpu().numpy()
+            grad_l_y = y_tensor.grad.detach().cpu().numpy()
+
+            # Update the input data
+            x_tensor = x_tensor.detach().cpu().numpy()
+            y_tensor = y_tensor.detach().cpu().numpy()
+
+            # Normalize the gradients [grad_x, grad_y] as [alpha, 1-alpha] being alpha+(1-alpha)=1
+            if self.is_rnn:
+                # Repeat the values of the variables to match the same instances as X.
+                grad_l_y = np.tile(grad_l_y, (grad_l_x.shape[-1], grad_l_y.shape[1]))
+                grad_l_x = grad_l_x.reshape(grad_l_x.shape[-1], grad_l_x.shape[1])
+                x_tensor = x_tensor.reshape(x_tensor.shape[-1], x_tensor.shape[1])
+
+            total_grad = np.concatenate((grad_l_x, grad_l_y), axis=1)
+            l2_grad = np.linalg.norm(total_grad)
+            grad_l_x = grad_l_x / l2_grad
+            grad_l_y = grad_l_y / l2_grad
+
+            if self.is_rnn:
+                grad_l_y = grad_l_y.squeeze()[0]
+
+            x_tensor -= grad_l_x*nrr*apply_gradient
+            y_tensor -= grad_l_y*nrr*apply_gradient
+
+            if self.is_rnn:
+                x_tensor = x_tensor.reshape(1, x_tensor.shape[-1], x_tensor.shape[0])
+
+            # Plot the progression of noise reduction if specified
+            if plot_progress:
+                fig.suptitle(f'Epoch: {epoch} - Noise Reduction Progress')
+
+                # Clear the plots
+                axes[0].clear()
+                axes[1].clear()
+
+                # Plot the data
+                if self._x_original.shape[1] == 2:
+                    self._plot3D(axes, x_tensor, y_tensor)
+                elif self._x_original.shape[1] == 1:
+                    self._plot2D(axes, x_tensor, y_tensor)
+                else:
+                    raise ValueError('The input data must have 1 or 2 features in order to plotted')
+
+                # Show the plots
+                display(fig)
+                # Clear the output
+                clear_output(wait=True)
+
+            epoch += 1
+
+        return x_tensor, y_tensor
+
+
+    def transform_old(
         self,
         nrr: float=0.05,
         nr_threshold: float=0.01,

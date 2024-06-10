@@ -52,10 +52,11 @@ class SlidingWindowDataset(Dataset):
         if self.mode == 'range':
             return len(self.X) - self.window_size - self.future + 1
         elif self.mode == 'discrete':
-            return len(self.X) - self.window_size - self.future[-1]
+            return len(self.X) - self.window_size - max(self.future)
 
 
     def __getitem__(self, idx):
+        assert idx < len(self)
         x = self.X.iloc[idx:idx + self.window_size].values
         if self.is_cnn:
             x = x.T
