@@ -8,6 +8,7 @@ from matplotlib.axes import Axes
 import torch
 from torch import nn
 from IPython.display import display, clear_output
+from sklearn.metrics import mean_squared_error
 
 
 class DLNoiseReduction():
@@ -32,8 +33,8 @@ class DLNoiseReduction():
         self._model = model
         self._criterion = criterion
         self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self._x_original = None
-        self._y_original = None
+        self._x_noisy = None
+        self._y_noisy = None
         self.is_rnn = is_rnn
 
         # Freeze the model to not change its performance during the reduction-noise process.
@@ -82,14 +83,14 @@ class DLNoiseReduction():
 
 
     @property
-    def x_original(self) -> np.ndarray:
+    def x_noisy(self) -> np.ndarray:
         """
         Get the original X input data.
 
         Returns:
             np.ndarray: original X input data.
         """
-        return self._x_original
+        return self._x_noisy
 
 
     @property
@@ -100,7 +101,7 @@ class DLNoiseReduction():
         Returns:
             np.ndarray: original y input data.
         """
-        return self._y_original
+        return self._y_noisy
 
 
     # Setters
@@ -138,15 +139,15 @@ class DLNoiseReduction():
         self._device = device
 
 
-    @x_original.setter
-    def x_original(self, x_original: np.ndarray) -> None:
+    @x_noisy.setter
+    def x_noisy(self, x_noisy: np.ndarray) -> None:
         """
         Set the original X input data.
 
         Args:
-            x_original (np.ndarray): original X input data.
+            x_noisy (np.ndarray): original X input data.
         """
-        self._x_original = x_original
+        self._x_noisy = x_noisy
 
 
     @y_original.setter
@@ -157,7 +158,7 @@ class DLNoiseReduction():
         Args:
             y_original (np.ndarray): original y input data.
         """
-        self._y_original = y_original
+        self._y_noisy = y_original
 
 
     # Private methods
@@ -172,8 +173,8 @@ class DLNoiseReduction():
             y (np.ndarray): donoised y input data.
         """
         axes[0].scatter(
-            self._x_original,
-            self._y_original,
+            self._x_noisy,
+            self._y_noisy,
             color='b',
             label='Original noisy data',
             s=5,
@@ -203,11 +204,11 @@ class DLNoiseReduction():
             y (np.ndarray): donoised y input data.
         """
         axes[0].scatter(
-            self._x_original[:,0],
-            self._x_original[:,1],
-            self._y_original,
+            self._x_noisy[:,0],
+            self._x_noisy[:,1],
+            self._y_noisy,
             marker='o',
-            c=self._y_original,
+            c=self._y_noisy,
             cmap='magma',
             alpha=0.5
         )
@@ -234,8 +235,8 @@ class DLNoiseReduction():
             y (np.array): array-like of shape (n_samples, n_targets).
                 The target values (real numbers).
         """
-        self._x_original = X.copy()#.reshape(-1, X.shape[-1]).copy()
-        self._y_original = y.copy()#.reshape(-1, y.shape[-1]).copy()
+        self._x_noisy = X.copy()#.reshape(-1, X.shape[-1]).copy()
+        self._y_noisy = y.copy()#.reshape(-1, y.shape[-1]).copy()
 
 
     def transform(
@@ -260,13 +261,13 @@ class DLNoiseReduction():
         Returns:
             Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
         """
-        x_tensor = self._x_original.copy()
-        y_tensor = self._y_original.copy()
+        x_tensor = self._x_noisy.copy()
+        y_tensor = self._y_noisy.copy()
 
         if plot_progress:
-            if self._x_original.shape[1] == 2:
+            if self._x_noisy.shape[1] == 2:
                 fig, axes = plt.subplots(1, 2, subplot_kw={'projection': '3d'}, figsize=(15, 8))
-            elif self._x_original.shape[1] == 1:
+            elif self._x_noisy.shape[1] == 1:
                 fig, axes = plt.subplots(1, 2, figsize=(15, 8))
             else:
                 raise ValueError('The input data must have 1 or 2 features in order to plotted')
@@ -335,9 +336,9 @@ class DLNoiseReduction():
                 axes[1].clear()
 
                 # Plot the data
-                if self._x_original.shape[1] == 2:
+                if self._x_noisy.shape[1] == 2:
                     self._plot3D(axes, x_tensor, y_tensor)
-                elif self._x_original.shape[1] == 1:
+                elif self._x_noisy.shape[1] == 1:
                     self._plot2D(axes, x_tensor, y_tensor)
                 else:
                     raise ValueError('The input data must have 1 or 2 features in order to plotted')
@@ -352,6 +353,7 @@ class DLNoiseReduction():
         return x_tensor, y_tensor
 
 
+    # TODO: Revisar código y eliminar si procede
     def transform_old(
         self,
         nrr: float=0.05,
@@ -374,13 +376,13 @@ class DLNoiseReduction():
         Returns:
             Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
         """
-        x_tensor = self._x_original.copy()
-        y_tensor = self._y_original.copy()
+        x_tensor = self._x_noisy.copy()
+        y_tensor = self._y_noisy.copy()
 
         if plot_progress:
-            if self._x_original.shape[1] == 2:
+            if self._x_noisy.shape[1] == 2:
                 fig, axes = plt.subplots(1, 2, subplot_kw={'projection': '3d'}, figsize=(15, 8))
-            elif self._x_original.shape[1] == 1:
+            elif self._x_noisy.shape[1] == 1:
                 fig, axes = plt.subplots(1, 2, figsize=(15, 8))
             else:
                 raise ValueError('The input data must have 1 or 2 features in order to plotted')
@@ -435,9 +437,9 @@ class DLNoiseReduction():
                 axes[1].clear()
 
                 # Plot the data
-                if self._x_original.shape[1] == 2:
+                if self._x_noisy.shape[1] == 2:
                     self._plot3D(axes, x_tensor, y_tensor)
-                elif self._x_original.shape[1] == 1:
+                elif self._x_noisy.shape[1] == 1:
                     self._plot2D(axes, x_tensor, y_tensor)
                 else:
                     raise ValueError('The input data must have 1 or 2 features in order to plotted')
@@ -486,3 +488,36 @@ class DLNoiseReduction():
         x_denoised, y_denoised = self.transform(nrr, nr_threshold, max_epochs, plot_progress)
 
         return x_denoised, y_denoised
+
+
+    def assert_improvement(self, x_denoised: np.ndarray, y_denoised: np.ndarray,
+                           x_orig: np.ndarray, y_orig: np.ndarray) -> bool:
+        """
+        Assert that the noise reduction process has improved the dataset based on
+        model performance.
+
+        Args:
+            x_denoised (np.ndarray): denoised X input data.
+            y_denoised (np.ndarray): denoised y input data.
+            x_orig (np.ndarray): original X input data, before adding noise.
+            y_orig (np.ndarray): original Y input data, before adding noise.
+
+        Returns:
+            bool: whether the data has improve or not.
+            
+        """
+
+        x_noisy_median_error = np.median(np.abs(self._x_noisy - x_orig))
+        x_denoised_median_error = np.median(np.abs(x_denoised - x_orig))
+        y_noisy_median_error = np.median(np.abs(self._y_noisy - y_orig))
+        y_denoised_median_error = np.median(np.abs(y_denoised - y_orig))
+
+        print(f'X noisy median error: {x_noisy_median_error}')
+        print(f'X denoised median error: {x_denoised_median_error}')
+        print(f'Y noisy median error: {y_noisy_median_error}')
+        print(f'Y denoised median error: {y_denoised_median_error}')
+
+        has_improved = x_denoised_median_error < x_noisy_median_error
+        has_improved = has_improved and (y_denoised_median_error < y_noisy_median_error)
+
+        return has_improved

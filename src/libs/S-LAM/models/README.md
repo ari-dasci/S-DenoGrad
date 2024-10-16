@@ -11,3 +11,5 @@ This folder contains the files necessary to define the transformer models, the a
 - local_transformers.py: implementation of local transformers. TODO: this is not functional yet.
 - masks.py: masks used in local attention from informer. This file is auxiliary but related to the models.
 - transformer.py: main file of this folder as it implements and generalizes the transformer model. The main purpose is that all transformer models can be created from this implementation changing the parameters and attention mechanisms.
+
+https://github.com/zhouhaoyi/Informer2020

@@ -69,9 +69,9 @@ class SlidingWindowDataset(Dataset):
         return x, y
 
 
-class BioFuelDataset(Dataset):
+class Dataset(Dataset):
     """
-    Custom dataset for symbolic regression problem on BioFuel
+    Custom dataset class
 
     Args:
         Dataset (Class): Inherits from the torch.utils.data.Dataset class

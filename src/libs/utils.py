@@ -32,15 +32,6 @@ Classes:
 import os
 import sys
 
-CURRENT_DIR = os.getcwd()
-FOLDERS = CURRENT_DIR.split(os.sep)
-TESIS_FOLDER_INDEX = FOLDERS.index('Tesis')
-CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
-CURRENT_DIR = os.path.join(CURRENT_DIR, 'S-noise-gradient')
-LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-assert os.path.exists(LIBS_PATH)
-sys.path.append(LIBS_PATH)
-
 # Import libraries
 # ---------------------------------------------------------------------------- #
 import pandas as pd
