@@ -122,6 +122,54 @@ class GridFullyDenseNN(nn.Module):
         return self.model(x)
 
 
+class GRUModel(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
+        super(GRUModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
+        # Definir la capa GRU
+        self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
+        
+        # Definir la capa de salida
+        self.fc = nn.Linear(hidden_size, output_size)
+        
+    def forward(self, x):
+        # Estado oculto inicial
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        
+        # Paso a través de la GRU
+        out, _ = self.gru(x, h0)
+        
+        # Paso a través de la capa totalmente conectada
+        out = self.fc(out[:, -1, :])  # Solo queremos la salida del último timestep
+        return out
+
+
+class LSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
+        super(LSTMModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
+        # Definir la capa LSTM
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        
+        # Definir la capa de salida
+        self.fc = nn.Linear(hidden_size, output_size)
+        
+    def forward(self, x):
+        # Estado oculto inicial
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        
+        # Paso a través de la LSTM
+        out, _ = self.lstm(x, h0)
+        
+        # Paso a través de la capa totalmente conectada
+        out = self.fc(out[:, -1, :])  # Solo queremos la salida del último timestep
+        return out
+
+
 # Trainer
 # ---------------------------------------------------------------------------- #
 class Trainer:
