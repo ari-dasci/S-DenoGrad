@@ -1,14 +1,14 @@
 """
 This module reduces the noise level of the input data of a Neural Network
 """
-from typing import Tuple
+from typing import Tuple, Union
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 import torch
 from torch import nn
+from torch.utils.data import Dataset
 from IPython.display import display, clear_output
-from sklearn.metrics import mean_squared_error
 
 
 class DLNoiseReduction():
@@ -20,7 +20,7 @@ class DLNoiseReduction():
         self,
         model: nn.Module,
         criterion: nn.modules.loss._Loss,
-        is_rnn: bool = False
+        is_ts: bool = False
     ):
         """
         Initialize the DLNoiseReduction class.
@@ -28,23 +28,14 @@ class DLNoiseReduction():
         Args:
             model (nn.Module): neural network model already trained.
             criterion (nn.modules.loss._Loss): loss function.
-            rnn (bool): indicates if the model is a rnn. Deafult False.
+            is_ts (bool): if the model is prepared to work with time series. Deafult False.
         """
         self._model = model
         self._criterion = criterion
         self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self._x_noisy = None
         self._y_noisy = None
-        self.is_rnn = is_rnn
-
-        # Freeze the model to not change its performance during the reduction-noise process.
-        if self.is_rnn:
-            self.model.train()
-        else:
-            self.model.eval()
-
-        for param in self._model.parameters():
-            param.requires_grad = self.is_rnn
+        self.is_ts = is_ts
 
 
     # Getters
@@ -223,23 +214,7 @@ class DLNoiseReduction():
         )
 
 
-    # Public methods
-    # --------------------------------------------------------------------------
-    def fit(self, X: np.array, y: np.array) -> None:
-        """
-        Fit the model to the input data.
-
-        Args:
-            X (np.array): array-like of shape (n_samples, n_features).
-                The training input samples.
-            y (np.array): array-like of shape (n_samples, n_targets).
-                The target values (real numbers).
-        """
-        self._x_noisy = X.copy()#.reshape(-1, X.shape[-1]).copy()
-        self._y_noisy = y.copy()#.reshape(-1, y.shape[-1]).copy()
-
-
-    def transform(
+    def _transform_tabular(
         self,
         nrr: float=0.05,
         nr_threshold: float=0.01,
@@ -306,26 +281,13 @@ class DLNoiseReduction():
             x_tensor = x_tensor.detach().cpu().numpy()
             y_tensor = y_tensor.detach().cpu().numpy()
 
-            # Normalize the gradients [grad_x, grad_y] as [alpha, 1-alpha] being alpha+(1-alpha)=1
-            if self.is_rnn:
-                # Repeat the values of the variables to match the same instances as X.
-                grad_l_y = np.tile(grad_l_y, (grad_l_x.shape[-1], grad_l_y.shape[1]))
-                grad_l_x = grad_l_x.reshape(grad_l_x.shape[-1], grad_l_x.shape[1])
-                x_tensor = x_tensor.reshape(x_tensor.shape[-1], x_tensor.shape[1])
-
             total_grad = np.concatenate((grad_l_x, grad_l_y), axis=1)
             l2_grad = np.linalg.norm(total_grad)
             grad_l_x = grad_l_x / l2_grad
             grad_l_y = grad_l_y / l2_grad
 
-            if self.is_rnn:
-                grad_l_y = grad_l_y.squeeze()[0]
-
             x_tensor -= grad_l_x*nrr*apply_gradient
             y_tensor -= grad_l_y*nrr*apply_gradient
-
-            if self.is_rnn:
-                x_tensor = x_tensor.reshape(1, x_tensor.shape[-1], x_tensor.shape[0])
 
             # Plot the progression of noise reduction if specified
             if plot_progress:
@@ -349,6 +311,141 @@ class DLNoiseReduction():
                 clear_output(wait=True)
 
             epoch += 1
+
+        return x_tensor, y_tensor
+
+
+    def _transform_time_series(
+        self,
+        nrr: float=0.05,
+        nr_threshold: float=0.01,
+        max_epochs: int=100,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Decrease the noise level in the input data (x and y).
+        If plot_progress is True, the process will take considerably more time.
+
+        Args:
+            nrr (float): noise reduction rate. Default 0.0005.
+            nr_threshold (float): if the difference between the f(x') and y is
+                less than nr_threshold the gradient will be applied no more. Default 0.01.
+            max_epochs (int): maximum number of epochs. Default 100.
+            plot_progress (bool): whether to plot the noise reduction progress or not.
+                Default False.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
+        """
+        x_tensor = self._x_noisy.copy()
+        y_tensor = self._y_noisy.copy()
+
+        epoch = 0
+        apply_gradient = [True, True]
+        while epoch < max_epochs and sum(apply_gradient) > 0:
+            x_tensor = torch.tensor(x_tensor, requires_grad=True)
+            y_tensor = torch.tensor(y_tensor, requires_grad=True)
+
+            # Calculate the gradients for X and Y performing a backpropagation step.
+            self._criterion.zero_grad()
+
+            y_predicted = self._model.forward(
+                x_tensor.float().to(self._device)
+            )
+            y_predicted.requires_grad_(True)
+            y_predicted.retain_grad()
+            loss = self._criterion(
+                y_predicted,
+                y_tensor.float().to(self._device)
+            )
+            loss.backward()
+
+            # Decide if the gradient is going to be applied or not
+            y_predicted_array = y_predicted.detach().cpu().numpy()
+            y_tensor_array = y_tensor.detach().cpu().numpy()
+            apply_gradient = np.abs(y_predicted_array - y_tensor_array)
+            apply_gradient = apply_gradient > nr_threshold
+
+            # Get the calculated gradients
+            grad_l_x = x_tensor.grad.detach().cpu().numpy()
+            grad_l_y = y_tensor.grad.detach().cpu().numpy()
+
+            # Update the input data
+            x_tensor = x_tensor.detach().cpu().numpy()
+            y_tensor = y_tensor.detach().cpu().numpy()
+
+            total_grad = np.concatenate((grad_l_x, grad_l_y), axis=1)
+            l2_grad = np.linalg.norm(total_grad)
+            grad_l_x = grad_l_x / l2_grad
+            grad_l_y = grad_l_y / l2_grad
+
+            x_tensor -= grad_l_x*nrr*apply_gradient
+            y_tensor -= grad_l_y*nrr*apply_gradient
+
+            epoch += 1
+
+        return x_tensor, y_tensor
+
+
+    # Public methods
+    # --------------------------------------------------------------------------
+    def fit(self, X: Union[np.array, Dataset], y: np.array = None) -> None:
+        """
+        Fit the model to the input data.
+
+        Args:
+            X (np.array): array-like of shape (n_samples, n_features).
+                The training input samples.
+            y (np.array): array-like of shape (n_samples, n_targets).
+                The target values (real numbers).
+        """
+        if isinstance(X, np.ndarray):
+            assert isinstance(y, np.ndarray), 'if X is a numpy array, y must be a numpy array'
+            assert X.shape[0] == y.shape[0], 'X and y must have the same number of samples'
+
+            self._y_noisy = y.copy()
+        else:
+            assert self.is_ts == True
+
+        self._x_noisy = X.copy()
+
+
+    def transform(
+        self,
+        nrr: float=0.05,
+        nr_threshold: float=0.01,
+        max_epochs: int=100,
+        plot_progress: bool=False,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Decrease the noise level in the input data (x and y).
+        If plot_progress is True, the process will take considerably more time.
+
+        Args:
+            nrr (float): noise reduction rate. Default 0.0005.
+            nr_threshold (float): if the difference between the f(x') and y is
+                less than nr_threshold the gradient will be applied no more. Default 0.01.
+            max_epochs (int): maximum number of epochs. Default 100.
+            plot_progress (bool): whether to plot the noise reduction progress or not.
+                Default False.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
+        """
+        x_tensor = None
+        y_tensor = None
+        if not self.is_ts:
+            x_tensor, y_tensor = self._transform_tabular(
+                nrr=nrr,
+                nr_threshold=nr_threshold,
+                max_epochs=max_epochs,
+                plot_progress=plot_progress
+            )
+        else:
+            x_tensor, y_tensor = self._transform_time_series(
+                nrr=nrr,
+                nr_threshold=nr_threshold,
+                max_epochs=max_epochs
+            )
 
         return x_tensor, y_tensor
 

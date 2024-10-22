@@ -9,6 +9,7 @@ Classes:
 
 # Libraries
 # ---------------------------------------------------------------------------- #
+import copy
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -67,6 +68,13 @@ class SlidingWindowDataset(Dataset):
             y = np.array([self.Y.iloc[idx + self.window_size + i_fut] for i_fut in self.future])
 
         return x, y
+
+
+    def copy(self):
+        """
+        Returns a deep copy of the current instance of SlidingWindowDataset.
+        """
+        return copy.deepcopy(self)
 
 
 class Dataset(Dataset):
