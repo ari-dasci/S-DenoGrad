@@ -127,7 +127,7 @@ class DenseTemporalModel(nn.Module):
         super(DenseTemporalModel, self).__init__()
 
         # Capas del modelo
-        self.flatten = nn.Flatten()  # Aplana las dimensiones (24, n_features) a (24 * n_features,)
+        self.flatten = nn.Flatten()  # Aplana las dimensiones (window, n_features) a (window * n_features,)
         self.fc1 = nn.Linear(input_size, hidden_size)  # Primera capa densa
         self.fc2 = nn.Linear(hidden_size, hidden_size)  # Segunda capa densa
         self.fc2 = nn.Linear(hidden_size, hidden_size)  # Segunda capa densa
@@ -137,8 +137,8 @@ class DenseTemporalModel(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        # x tiene forma (batch_size, 24, n_features)
-        x = self.flatten(x)  # Aplana a (batch_size, 24 * n_features)
+        # x tiene forma (batch_size, window, n_features)
+        x = self.flatten(x)  # Aplana a (batch_size, window * n_features)
         x = self.relu(self.fc1(x))  # Primera capa densa con ReLU
         x = self.relu(self.fc2(x))  # Segunda capa densa con ReLU
         x = self.fc3(x)  # Capa de salida

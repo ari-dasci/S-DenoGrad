@@ -9,6 +9,7 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 from IPython.display import display, clear_output
+from tqdm import tqdm
 
 
 class DLNoiseReduction():
@@ -336,54 +337,72 @@ class DLNoiseReduction():
         Returns:
             Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
         """
-        x_tensor = self._x_noisy.copy()
-        y_tensor = self._y_noisy.copy()
+        original_X = self._x_noisy.X.copy()
+        original_y = self._x_noisy.Y.copy()
+        window_size = self._x_noisy.window_size
 
         epoch = 0
         apply_gradient = [True, True]
-        while epoch < max_epochs and sum(apply_gradient) > 0:
-            x_tensor = torch.tensor(x_tensor, requires_grad=True)
-            y_tensor = torch.tensor(y_tensor, requires_grad=True)
+        with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
+            while epoch < max_epochs and sum(apply_gradient) > 0:
+                n_window = 0
+                # for x_tensor, y_tensor in self._x_noisy:
+                for i, _ in enumerate(self._x_noisy):
+                    x_tensor = torch.tensor(self._x_noisy[i][0]).unsqueeze(0)
+                    x_tensor.requires_grad_(True)
+                    y_tensor = torch.tensor(self._x_noisy[i][1]).unsqueeze(0)
+                    y_tensor.requires_grad_(True)
 
-            # Calculate the gradients for X and Y performing a backpropagation step.
-            self._criterion.zero_grad()
+                    # Calculate the gradients for X and Y performing a backpropagation step.
+                    self._criterion.zero_grad()
 
-            y_predicted = self._model.forward(
-                x_tensor.float().to(self._device)
-            )
-            y_predicted.requires_grad_(True)
-            y_predicted.retain_grad()
-            loss = self._criterion(
-                y_predicted,
-                y_tensor.float().to(self._device)
-            )
-            loss.backward()
+                    y_predicted = self._model.forward(
+                        x_tensor.float().to(self._device)
+                    )
+                    y_predicted.unsqueeze(0)
+                    # y_predicted.requires_grad_(True)
+                    # y_predicted.retain_grad()
+                    loss = self._criterion(
+                        y_predicted,
+                        y_tensor.float().to(self._device)
+                    )
+                    loss.backward()
 
-            # Decide if the gradient is going to be applied or not
-            y_predicted_array = y_predicted.detach().cpu().numpy()
-            y_tensor_array = y_tensor.detach().cpu().numpy()
-            apply_gradient = np.abs(y_predicted_array - y_tensor_array)
-            apply_gradient = apply_gradient > nr_threshold
+                    # Decide if the gradient is going to be applied or not
+                    y_predicted_array = y_predicted.detach().cpu().numpy()
+                    y_tensor_array = y_tensor.detach().cpu().numpy()
+                    apply_gradient = np.abs(y_predicted_array - y_tensor_array)
+                    apply_gradient = apply_gradient > nr_threshold
 
-            # Get the calculated gradients
-            grad_l_x = x_tensor.grad.detach().cpu().numpy()
-            grad_l_y = y_tensor.grad.detach().cpu().numpy()
+                    # Get the calculated gradients
+                    grad_l_x = x_tensor.grad.detach().cpu().numpy()
+                    grad_l_y = y_tensor.grad.detach().cpu().numpy()
 
-            # Update the input data
-            x_tensor = x_tensor.detach().cpu().numpy()
-            y_tensor = y_tensor.detach().cpu().numpy()
+                    # Update the input data
+                    # x_tensor = x_tensor.detach().cpu().numpy()
+                    # y_tensor = y_tensor.detach().cpu().numpy()
 
-            total_grad = np.concatenate((grad_l_x, grad_l_y), axis=1)
-            l2_grad = np.linalg.norm(total_grad)
-            grad_l_x = grad_l_x / l2_grad
-            grad_l_y = grad_l_y / l2_grad
+                    grad_l_y = np.tile(grad_l_y, (1, 24, 1))
+                    total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
+                    l2_grad = np.linalg.norm(total_grad)
 
-            x_tensor -= grad_l_x*nrr*apply_gradient
-            y_tensor -= grad_l_y*nrr*apply_gradient
+                    grad_l_x = grad_l_x / l2_grad
+                    grad_l_y = grad_l_y / l2_grad
 
-            epoch += 1
+                    apply_gradient = apply_gradient.squeeze(axis=0)
 
-        return x_tensor, y_tensor
+                    grad_l_x = grad_l_x.squeeze(axis=0)
+                    original_X[n_window:n_window+window_size] -= grad_l_x*nrr*apply_gradient
+
+                    grad_l_y = grad_l_y.mean()
+                    original_y[n_window:n_window+window_size] -= grad_l_y*nrr*apply_gradient
+
+                    n_window += 1
+                    pbar1.update(1)
+
+                epoch += 1
+
+        return original_X, original_y
 
 
     # Public methods
@@ -398,15 +417,13 @@ class DLNoiseReduction():
             y (np.array): array-like of shape (n_samples, n_targets).
                 The target values (real numbers).
         """
-        if isinstance(X, np.ndarray):
-            assert isinstance(y, np.ndarray), 'if X is a numpy array, y must be a numpy array'
-            assert X.shape[0] == y.shape[0], 'X and y must have the same number of samples'
-
+        if y is not None:
+            assert not self.is_ts, 'Model set to work with time series but «y» has been provided.'
             self._y_noisy = y.copy()
+            self._x_noisy = X.copy()
         else:
-            assert self.is_ts == True
-
-        self._x_noisy = X.copy()
+            assert self.is_ts, 'Model prepared to work with tabular data but no «y» has been provided.'
+            self._x_noisy = X
 
 
     def transform(
