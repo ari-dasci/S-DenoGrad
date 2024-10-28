@@ -69,7 +69,7 @@ class SlidingWindowDataset(Dataset):
         elif self.mode == 'discrete':
             y = np.array([self.Y.iloc[idx + self.window_size + i_fut] for i_fut in self.future])
 
-        return x, y
+        return [x, y]
 
 
     def __iter__(self):

@@ -10,6 +10,7 @@ from torch import nn
 from torch.utils.data import Dataset
 from IPython.display import display, clear_output
 from tqdm import tqdm
+import time
 
 
 class DLNoiseReduction():
@@ -337,38 +338,45 @@ class DLNoiseReduction():
         Returns:
             Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
         """
-        original_X = self._x_noisy.X.copy()
-        original_y = self._x_noisy.Y.copy()
-        window_size = self._x_noisy.window_size
-
         epoch = 0
         apply_gradient = [True, True]
         with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
             while epoch < max_epochs and sum(apply_gradient) > 0:
                 n_window = 0
-                # for x_tensor, y_tensor in self._x_noisy:
+                # Iterate over the windows
                 for i, _ in enumerate(self._x_noisy):
+                    # Add a dimension to match the model requirements for time series
+                    # (batch, window, variables) and make it a tensor.
+                    preparation_time_start = time.time() #######################################
                     x_tensor = torch.tensor(self._x_noisy[i][0]).unsqueeze(0)
                     x_tensor.requires_grad_(True)
                     y_tensor = torch.tensor(self._x_noisy[i][1]).unsqueeze(0)
                     y_tensor.requires_grad_(True)
 
                     # Calculate the gradients for X and Y performing a backpropagation step.
+                    # Set the gradients to zero
                     self._criterion.zero_grad()
+                    preparation_time_end = time.time()#######################################
 
+
+                    prediction_time_start = time.time()#######################################
+                    # Predict the target for this iteration window
                     y_predicted = self._model.forward(
                         x_tensor.float().to(self._device)
                     )
-                    y_predicted.unsqueeze(0)
-                    # y_predicted.requires_grad_(True)
-                    # y_predicted.retain_grad()
+
+                    # Add a dimension to match the shape of the y_tensor
+                    y_predicted = y_predicted.unsqueeze(0)
                     loss = self._criterion(
                         y_predicted,
                         y_tensor.float().to(self._device)
                     )
                     loss.backward()
+                    prediction_time_end = time.time()#######################################
 
-                    # Decide if the gradient is going to be applied or not
+
+                    gradient_calc_time_start = time.time()#######################################
+                    # Decide if the gradient is going to be applied or not based on the threshold
                     y_predicted_array = y_predicted.detach().cpu().numpy()
                     y_tensor_array = y_tensor.detach().cpu().numpy()
                     apply_gradient = np.abs(y_predicted_array - y_tensor_array)
@@ -378,11 +386,9 @@ class DLNoiseReduction():
                     grad_l_x = x_tensor.grad.detach().cpu().numpy()
                     grad_l_y = y_tensor.grad.detach().cpu().numpy()
 
-                    # Update the input data
-                    # x_tensor = x_tensor.detach().cpu().numpy()
-                    # y_tensor = y_tensor.detach().cpu().numpy()
-
-                    grad_l_y = np.tile(grad_l_y, (1, 24, 1))
+                    # Get the shape of the window. In the last iteration it can be smaller.
+                    window_size = grad_l_x.shape[1]
+                    grad_l_y = np.tile(grad_l_y, (1, window_size, 1))
                     total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
                     l2_grad = np.linalg.norm(total_grad)
 
@@ -391,18 +397,28 @@ class DLNoiseReduction():
 
                     apply_gradient = apply_gradient.squeeze(axis=0)
 
+                    gradient_calc_time_end = time.time()#######################################
+
+                    apply_gradient_time_start = time.time()#######################################
                     grad_l_x = grad_l_x.squeeze(axis=0)
-                    original_X[n_window:n_window+window_size] -= grad_l_x*nrr*apply_gradient
+                    self._x_noisy[i][0] -= grad_l_x*nrr*apply_gradient
 
                     grad_l_y = grad_l_y.mean()
-                    original_y[n_window:n_window+window_size] -= grad_l_y*nrr*apply_gradient
+                    self._x_noisy[i][1] -= grad_l_y*nrr*apply_gradient
+                    apply_gradient_time_end = time.time()#######################################
 
                     n_window += 1
                     pbar1.update(1)
 
                 epoch += 1
 
-        return original_X, original_y
+                print(f'Preparation time: {preparation_time_end - preparation_time_start}')
+                print(f'prediction time: {prediction_time_end - prediction_time_start}')
+                print(f'gradient_calc time: {gradient_calc_time_end - gradient_calc_time_start}')
+                print(f'apply_gradient time: {apply_gradient_time_end - apply_gradient_time_start}')
+                exit()
+
+        return self._x_noisy
 
 
     # Public methods
