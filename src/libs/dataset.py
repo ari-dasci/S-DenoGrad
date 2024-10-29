@@ -41,8 +41,8 @@ class SlidingWindowDataset(Dataset):
             cnn (bool, optional): indicates if the LSTM model to be used
                     has convolutional layers in the input. Defaults to False.
         """
-        self.X = X
-        self.Y = Y
+        self.X = X.copy()
+        self.Y = Y.copy()
         self.window_size = window_size
         self.future = future
         self.mode = mode

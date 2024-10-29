@@ -173,7 +173,7 @@ dlnr.fit(df_to_denoise)
 # %%
 X_denoised, y_denoised = dlnr.transform(
     nrr=0.05,
-    nr_threshold=0.05,
+    nr_threshold=0.001,
     max_epochs=500,
     plot_progress=False
 )

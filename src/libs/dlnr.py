@@ -421,12 +421,12 @@ class DLNoiseReduction():
 
                 epoch += 1
 
-                print(f'Preparation time: {(preparation_time_end - preparation_time_start)*35040}')
-                print(f'prediction time0: {(prediction_time_end_0 - prediction_time_start_0)*35040}')
-                print(f'prediction time1: {(prediction_time_end_1 - prediction_time_start_1)*35040}')
-                print(f'prediction time2: {(prediction_time_end_2 - prediction_time_start_2)*35040}')
-                print(f'gradient_calc time: {(gradient_calc_time_end - gradient_calc_time_start)*35040}')
-                print(f'apply_gradient time: {(apply_gradient_time_end - apply_gradient_time_start)*35040}')
+                # print(f'Preparation time: {(preparation_time_end - preparation_time_start)*35040}')
+                # print(f'prediction time0: {(prediction_time_end_0 - prediction_time_start_0)*35040}')
+                # print(f'Loss time1: {(prediction_time_end_1 - prediction_time_start_1)*35040}')
+                # print(f'Backward time2: {(prediction_time_end_2 - prediction_time_start_2)*35040}')
+                # print(f'gradient_calc time: {(gradient_calc_time_end - gradient_calc_time_start)*35040}')
+                # print(f'apply_gradient time: {(apply_gradient_time_end - apply_gradient_time_start)*35040}')
 
         return self._x_noisy.X, self._x_noisy.Y
 
