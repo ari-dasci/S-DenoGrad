@@ -351,6 +351,7 @@ class DLNoiseReduction():
                     # (batch, window, variables) and make it a tensor.
                     preparation_time_start = time.time() #######################################
                     x_tensor = torch.tensor(self._x_noisy[i][0]).unsqueeze(0)
+                    print(x_tensor.shape)
                     x_tensor.requires_grad_(True)
                     y_tensor = torch.tensor(self._x_noisy[i][1]).unsqueeze(0)
                     y_tensor.requires_grad_(True)
@@ -409,6 +410,8 @@ class DLNoiseReduction():
                     apply_gradient_time_start = time.time()#####################################
                     grad_l_x = grad_l_x.squeeze(axis=0)
                     grad_l_x = grad_l_x*nrr*apply_gradient
+                    print(self._x_noisy.X.loc[n_window:n_window+grad_l_x.shape[0]-1].shape)
+                    print(grad_l_x.shape)
                     self._x_noisy.X.loc[n_window:n_window+grad_l_x.shape[0]-1] -= grad_l_x
 
                     grad_l_y = grad_l_y.mean()
