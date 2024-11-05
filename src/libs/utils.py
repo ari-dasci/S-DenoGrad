@@ -317,7 +317,7 @@ def exist_dir(dir_path):
 
 
 # Classes
-# ---------------------------------------------------------------------------- #
+# ------------------------------------------------------------------------------------------------ #
 class MinMaxScalerCustom:
     """
     Min Max Scaler with custom range for each column

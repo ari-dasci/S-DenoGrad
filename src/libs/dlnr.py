@@ -222,6 +222,7 @@ class DLNoiseReduction():
         nr_threshold: float=0.01,
         max_epochs: int=100,
         plot_progress: bool=False,
+        denoise_y: bool=True
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
@@ -289,7 +290,8 @@ class DLNoiseReduction():
             grad_l_y = grad_l_y / l2_grad
 
             x_tensor -= grad_l_x*nrr*apply_gradient
-            y_tensor -= grad_l_y*nrr*apply_gradient
+            if denoise_y:
+                y_tensor -= grad_l_y*nrr*apply_gradient
 
             # Plot the progression of noise reduction if specified
             if plot_progress:
@@ -322,6 +324,7 @@ class DLNoiseReduction():
         nrr: float=0.05,
         nr_threshold: float=0.01,
         max_epochs: int=100,
+        denoise_y: bool=True
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
@@ -351,7 +354,6 @@ class DLNoiseReduction():
                     # (batch, window, variables) and make it a tensor.
                     preparation_time_start = time.time() #######################################
                     x_tensor = torch.tensor(self._x_noisy[i][0]).unsqueeze(0)
-                    print(x_tensor.shape)
                     x_tensor.requires_grad_(True)
                     y_tensor = torch.tensor(self._x_noisy[i][1]).unsqueeze(0)
                     y_tensor.requires_grad_(True)
@@ -410,13 +412,12 @@ class DLNoiseReduction():
                     apply_gradient_time_start = time.time()#####################################
                     grad_l_x = grad_l_x.squeeze(axis=0)
                     grad_l_x = grad_l_x*nrr*apply_gradient
-                    print(self._x_noisy.X.loc[n_window:n_window+grad_l_x.shape[0]-1].shape)
-                    print(grad_l_x.shape)
                     self._x_noisy.X.loc[n_window:n_window+grad_l_x.shape[0]-1] -= grad_l_x
 
-                    grad_l_y = grad_l_y.mean()
-                    grad_l_y = grad_l_y*nrr*apply_gradient
-                    self._x_noisy.Y.loc[n_window:n_window+grad_l_y.shape[0]-1] -= grad_l_y
+                    if denoise_y:
+                        grad_l_y = grad_l_y.mean()
+                        grad_l_y = grad_l_y*nrr*apply_gradient
+                        self._x_noisy.Y.loc[n_window:n_window+grad_l_y.shape[0]-1] -= grad_l_y
                     apply_gradient_time_end = time.time()#######################################
 
                     n_window += 1
@@ -461,6 +462,7 @@ class DLNoiseReduction():
         nr_threshold: float=0.01,
         max_epochs: int=100,
         plot_progress: bool=False,
+        denoise_y: bool=True
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
@@ -484,13 +486,15 @@ class DLNoiseReduction():
                 nrr=nrr,
                 nr_threshold=nr_threshold,
                 max_epochs=max_epochs,
-                plot_progress=plot_progress
+                plot_progress=plot_progress,
+                denoise_y=denoise_y
             )
         else:
             x_tensor, y_tensor = self._transform_time_series(
                 nrr=nrr,
                 nr_threshold=nr_threshold,
-                max_epochs=max_epochs
+                max_epochs=max_epochs,
+                denoise_y=denoise_y
             )
 
         return x_tensor, y_tensor

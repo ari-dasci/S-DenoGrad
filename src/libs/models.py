@@ -134,13 +134,13 @@ class DenseTemporalModel(nn.Module):
         self.fc3 = nn.Linear(hidden_size, output_size)  # Capa de salida
 
         # Función de activación
-        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         # x tiene forma (batch_size, window, n_features)
         x = self.flatten(x)  # Aplana a (batch_size, window * n_features)
-        x = self.relu(self.fc1(x))  # Primera capa densa con ReLU
-        x = self.relu(self.fc2(x))  # Segunda capa densa con ReLU
+        x = self.sigmoid(self.fc1(x))  # Primera capa densa con Sigmoid
+        x = self.sigmoid(self.fc2(x))  # Segunda capa densa con Sigmoid
         x = self.fc3(x)  # Capa de salida
         return x
 
