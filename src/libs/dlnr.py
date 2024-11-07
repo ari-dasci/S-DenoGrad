@@ -402,8 +402,9 @@ class DLNoiseReduction():
                     total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
                     l2_grad = np.linalg.norm(total_grad)
 
-                    grad_l_x = grad_l_x / l2_grad
-                    grad_l_y = grad_l_y / l2_grad
+                    if l2_grad:
+                        grad_l_x /= l2_grad
+                        grad_l_y /= l2_grad
 
                     apply_gradient = apply_gradient.squeeze(axis=0)
 
