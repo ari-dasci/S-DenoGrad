@@ -35,18 +35,19 @@ import torch
 from torch import nn
 import numpy as np
 from tqdm import tqdm
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+# XAI models
+from sklearn.linear_model import Ridge                  # Ridge regression
+from sklearn.cross_decomposition import PLSRegression   # Partial least squares regression
+from sklearn.tree import DecisionTreeRegressor          # Decision tree regression
+from sklearn.svm import LinearSVR                       # Linear support vector regression
+from sklearn.neighbors import KNeighborsRegressor       # K-neighbors regression
+from pmdarima import auto_arima                         # Auto ARIMA
+
 # Locals
 from config import Colors
 from utils import *
-
-# CURRENT_DIR = os.getcwd()
-# FOLDERS = CURRENT_DIR.split(os.sep)
-# TESIS_FOLDER_INDEX = FOLDERS.index('Tesis')
-# CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
-# CURRENT_DIR = os.path.join(CURRENT_DIR, 'S-noise-gradient')
-# LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-# assert os.path.exists(LIBS_PATH)
-# sys.path.append(LIBS_PATH)
 
 
 # Classes
@@ -471,3 +472,104 @@ class Trainer:
             predictions.append(self.best_model(batch_x))
 
         return predictions
+
+
+class XAI_benchmark:
+    """
+    Class to perform model training in the style of PyTorch Lightning.
+    """
+    def __init__(self, is_ts:bool = False, model_params:dict = None) -> None:
+        self.is_ts = is_ts
+
+        self.ridge = Ridge(**model_params['ridge'])
+        self.pls = PLSRegression(**model_params['pls'])
+        self.decision_tree = DecisionTreeRegressor(**model_params['tree'])
+        self.svm = LinearSVR(**model_params['svm'])
+        self.knn = KNeighborsRegressor(**model_params['knn'])
+        if self.is_ts:
+            self.arima = auto_arima(**model_params['arima'])
+
+
+    def fit(self, X:np.array, y:np.array) -> None:
+        """
+        Fit all XAI models
+
+        Args:
+            X (np.array): input training data.
+            y (np.array): target training data.
+        """
+        print('Fitting Ridge model...')
+        self.ridge.fit(X, y)
+        print('Fitting Partial Least Squares model...')
+        self.pls.fit(X, y)
+        print('Fitting Decision Tree model...')
+        self.decision_tree.fit(X, y)
+        print('Fitting Support Vector Machine model...')
+        self.svm.fit(X, y)
+        print('Fitting K-Nearest Neighbours model...')
+        self.knn.fit(X, y)
+        if self.is_ts:
+            print('Fitting ARIMA model...')
+            self.arima.fit(y)
+
+        print('All models fitted!')
+
+
+    def predict(self, X:np.array, y_true:np.array = None, get_metrics:bool = False) -> dict:
+        """
+        Predict with all XAI models.
+
+        Args:
+            X (np.array): input validation/test data.
+
+        Returns:
+            dictionary: dictionary with all the models predictions.
+        """
+        predictions = {
+            'ridge': self.ridge.predict(X),
+            'pls': self.pls.predict(X),
+            'decision_tree': self.decision_tree.predict(X),
+            'svm': self.svm.predict(X),
+            'knn': self.knn.predict(X)
+        }
+        metrics = {}
+
+        if self.is_ts:
+            predictions['arima'] = self.arima.predict(n_periods=X.shape[0])
+
+        if get_metrics:
+            assert y_true is not None, 'y must be provided to calculate metrics.'
+            metrics = {
+                'ridge': {
+                    'mse':mean_squared_error(y_true, predictions['ridge']),
+                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['ridge'])),
+                    'mae':mean_absolute_error(y_true, predictions['ridge']),
+                    'R2':r2_score(y_true, predictions['ridge'])
+                },
+                'pls': {
+                    'mse':mean_squared_error(y_true, predictions['pls']),
+                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['pls'])),
+                    'mae':mean_absolute_error(y_true, predictions['pls']),
+                    'R2':r2_score(y_true, predictions['pls'])
+                },
+                'decision_tree': {
+                    'mse':mean_squared_error(y_true, predictions['decision_tree']),
+                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['decision_tree'])),
+                    'mae':mean_absolute_error(y_true, predictions['decision_tree']),
+                    'R2':r2_score(y_true, predictions['decision_tree'])
+                },
+                'svm': {
+                    'mse':mean_squared_error(y_true, predictions['svm']),
+                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['svm'])),
+                    'mae':mean_absolute_error(y_true, predictions['svm']),
+                    'R2':r2_score(y_true, predictions['svm'])
+                },
+                'knn': {
+                    'mse':mean_squared_error(y_true, predictions['knn']),
+                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['knn'])),
+                    'mae':mean_absolute_error(y_true, predictions['knn']),
+                    'R2':r2_score(y_true, predictions['knn'])
+                },
+            }
+
+        return predictions, metrics
