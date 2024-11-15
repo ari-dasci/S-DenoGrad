@@ -22,7 +22,8 @@ class DLNoiseReduction():
         self,
         model: nn.Module,
         criterion: nn.modules.loss._Loss,
-        is_ts: bool = False
+        is_ts: bool = False,
+        is_cnn: bool = False
     ):
         """
         Initialize the DLNoiseReduction class.
@@ -38,6 +39,7 @@ class DLNoiseReduction():
         self._x_noisy = None
         self._y_noisy = None
         self.is_ts = is_ts
+        self.is_cnn = is_cnn
 
 
     # Getters
@@ -413,7 +415,11 @@ class DLNoiseReduction():
                     apply_gradient_time_start = time.time()#####################################
                     grad_l_x = grad_l_x.squeeze(axis=0)
                     grad_l_x = grad_l_x*nrr*apply_gradient
-                    self._x_noisy.X.loc[n_window:n_window+grad_l_x.shape[0]-1] -= grad_l_x
+                    grad_l_x_shape = grad_l_x.shape[0]
+                    if self.is_cnn:
+                        grad_l_x_shape = grad_l_x.shape[1]
+                        grad_l_x = grad_l_x.T
+                    self._x_noisy.X.loc[n_window:n_window+grad_l_x_shape-1] -= grad_l_x
 
                     if denoise_y:
                         grad_l_y = grad_l_y.mean()
