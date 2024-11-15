@@ -9,6 +9,7 @@ Classes:
 
 # Libraries
 # ---------------------------------------------------------------------------- #
+import copy
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -40,8 +41,8 @@ class SlidingWindowDataset(Dataset):
             cnn (bool, optional): indicates if the LSTM model to be used
                     has convolutional layers in the input. Defaults to False.
         """
-        self.X = X
-        self.Y = Y
+        self.X = X.copy()
+        self.Y = Y.copy()
         self.window_size = window_size
         self.future = future
         self.mode = mode
@@ -50,13 +51,15 @@ class SlidingWindowDataset(Dataset):
 
     def __len__(self):
         if self.mode == 'range':
-            return len(self.X) - self.window_size - self.future + 1
+            n_windows = len(self.X) - self.window_size - self.future + 1
         elif self.mode == 'discrete':
-            return len(self.X) - self.window_size - max(self.future)
+            n_windows = len(self.X) - self.window_size - max(self.future) + 1
+
+        return n_windows
 
 
     def __getitem__(self, idx):
-        assert idx < len(self)
+        assert idx < len(self), f'Index {idx} out of range'
         x = self.X.iloc[idx:idx + self.window_size].values
         if self.is_cnn:
             x = x.T
@@ -66,7 +69,22 @@ class SlidingWindowDataset(Dataset):
         elif self.mode == 'discrete':
             y = np.array([self.Y.iloc[idx + self.window_size + i_fut] for i_fut in self.future])
 
-        return x, y
+        return [x, y]
+
+
+    def __iter__(self):
+        """
+        Devuelve un iterador sobre el dataset, para que se pueda usar en un bucle for.
+        """
+        for idx in range(len(self)):
+            yield self.__getitem__(idx)
+
+
+    def copy(self):
+        """
+        Returns a deep copy of the current instance of SlidingWindowDataset.
+        """
+        return copy.deepcopy(self)
 
 
 class Dataset(Dataset):

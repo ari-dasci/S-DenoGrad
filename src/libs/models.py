@@ -127,46 +127,46 @@ class DenseTemporalModel(nn.Module):
         super(DenseTemporalModel, self).__init__()
 
         # Capas del modelo
-        self.flatten = nn.Flatten()  # Aplana las dimensiones (24, n_features) a (24 * n_features,)
+        self.flatten = nn.Flatten()  # Aplana las dimensiones (window, n_features) a (window * n_features,)
         self.fc1 = nn.Linear(input_size, hidden_size)  # Primera capa densa
         self.fc2 = nn.Linear(hidden_size, hidden_size)  # Segunda capa densa
         self.fc2 = nn.Linear(hidden_size, hidden_size)  # Segunda capa densa
         self.fc3 = nn.Linear(hidden_size, output_size)  # Capa de salida
 
         # Función de activación
-        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        # x tiene forma (batch_size, 24, n_features)
-        x = self.flatten(x)  # Aplana a (batch_size, 24 * n_features)
-        x = self.relu(self.fc1(x))  # Primera capa densa con ReLU
-        x = self.relu(self.fc2(x))  # Segunda capa densa con ReLU
+        # x tiene forma (batch_size, window, n_features)
+        x = self.flatten(x)  # Aplana a (batch_size, window * n_features)
+        x = self.sigmoid(self.fc1(x))  # Primera capa densa con Sigmoid
+        x = self.sigmoid(self.fc2(x))  # Segunda capa densa con Sigmoid
         x = self.fc3(x)  # Capa de salida
         return x
 
 
-class GRUModel(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
-        super(GRUModel, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
+# class GRUModel(nn.Module):
+#     def __init__(self, input_size, hidden_size, output_size, num_layers=1):
+#         super(GRUModel, self).__init__()
+#         self.hidden_size = hidden_size
+#         self.num_layers = num_layers
 
-        # Definir la capa GRU
-        self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
+#         # Definir la capa GRU
+#         self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True)
 
-        # Definir la capa de salida
-        self.fc = nn.Linear(hidden_size, output_size)
+#         # Definir la capa de salida
+#         self.fc = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x):
-        # Estado oculto inicial
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+#     def forward(self, x):
+#         # Estado oculto inicial
+#         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
 
-        # Paso a través de la GRU
-        out, _ = self.gru(x, h0)
+#         # Paso a través de la GRU
+#         out, _ = self.gru(x, h0)
 
-        # Paso a través de la capa totalmente conectada
-        out = self.fc(out[:, -1, :])  # Solo queremos la salida del último timestep
-        return out
+#         # Paso a través de la capa totalmente conectada
+#         out = self.fc(out[:, -1, :])  # Solo queremos la salida del último timestep
+#         return out
 
 
 class LSTMModel(nn.Module):
@@ -184,9 +184,10 @@ class LSTMModel(nn.Module):
     def forward(self, x):
         # Estado oculto inicial
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
 
         # Paso a través de la LSTM
-        out, _ = self.lstm(x, h0)
+        out, _ = self.lstm(x, (h0, c0))
 
         # Paso a través de la capa totalmente conectada
         out = self.fc(out[:, -1, :])  # Solo queremos la salida del último timestep
