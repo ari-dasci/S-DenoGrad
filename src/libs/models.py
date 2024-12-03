@@ -138,6 +138,15 @@ class DenseTemporalModel(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
+        """
+        Forward pass of the model.
+
+        Args:
+            x (torch.tensor): Noisy input data.
+
+        Returns:
+            torch.tensor: Denoised data.
+        """
         # x tiene forma (batch_size, window, n_features)
         x = self.flatten(x)  # Aplana a (batch_size, window * n_features)
         x = self.sigmoid(self.fc1(x))  # Primera capa densa con Sigmoid
@@ -159,6 +168,15 @@ class DenseTemporalModel(nn.Module):
 #         self.fc = nn.Linear(hidden_size, output_size)
 
 #     def forward(self, x):
+            # """
+            # Forward pass of the model.
+
+            # Args:
+            #     x (torch.tensor): Noisy input data.
+
+            # Returns:
+            #     torch.tensor: Denoised data.
+            # """
 #         # Estado oculto inicial
 #         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
 
@@ -183,6 +201,15 @@ class LSTMModel(nn.Module):
         self.fc = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
+        """
+        Forward pass of the model.
+
+        Args:
+            x (torch.tensor): Noisy input data.
+
+        Returns:
+            torch.tensor: Denoised data.
+        """
         # Estado oculto inicial
         h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(x.device)
@@ -193,6 +220,52 @@ class LSTMModel(nn.Module):
         # Paso a través de la capa totalmente conectada
         out = self.fc(out[:, -1, :])  # Solo queremos la salida del último timestep
         return out
+
+
+class DenoisingAutoencoder(nn.Module):
+    """
+    Denoising autoencoder model.
+
+    Args:
+        nn (torch.module): Inherited class.
+    """
+    def __init__(self, input_dim, latent_dim):
+        super(DenoisingAutoencoder, self).__init__()
+
+        # Encoder
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, latent_dim),
+            # nn.ReLU()
+        )
+
+        # Decoder
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 128),
+            nn.ReLU(),
+            nn.Linear(128, input_dim),
+            # nn.Sigmoid()  # Para valores normalizados entre 0 y 1
+        )
+
+    def forward(self, x):
+        """
+        Forward pass of the model.
+
+        Args:
+            x (torch.tensor): Noisy input data.
+
+        Returns:
+            torch.tensor: Denoised data.
+        """
+        # Forward pass
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return decoded
 
 
 # Trainer
@@ -319,6 +392,7 @@ class Trainer:
         val_loss = self.criterion(val_outputs, batch_y_val).item()
 
         return val_loss
+
 
     def __early_stoping(self, val_loss, train_loss, epoch, verbose=False):
         """

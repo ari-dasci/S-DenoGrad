@@ -163,3 +163,5 @@ logs/
 *.log
 # *.err
 # *.out
+
+imgs/

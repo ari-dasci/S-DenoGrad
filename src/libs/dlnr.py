@@ -224,7 +224,8 @@ class DLNoiseReduction():
         nr_threshold: float=0.01,
         max_epochs: int=100,
         plot_progress: bool=False,
-        denoise_y: bool=True
+        denoise_y: bool=True,
+        path_to_save_imgs: str=None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
@@ -304,6 +305,7 @@ class DLNoiseReduction():
                 axes[1].clear()
 
                 # Plot the data
+
                 if self._x_noisy.shape[1] == 2:
                     self._plot3D(axes, x_tensor, y_tensor)
                 elif self._x_noisy.shape[1] == 1:
@@ -311,6 +313,10 @@ class DLNoiseReduction():
                 else:
                     raise ValueError('The input data must have 1 or 2 features in order to plotted')
 
+                if path_to_save_imgs:
+                    img_name = f"{path_to_save_imgs}/grafico_{epoch}.png"
+                    plt.savefig(img_name, dpi=300, bbox_inches='tight')
+                    
                 # Show the plots
                 display(fig)
                 # Clear the output
@@ -469,7 +475,8 @@ class DLNoiseReduction():
         nr_threshold: float=0.01,
         max_epochs: int=100,
         plot_progress: bool=False,
-        denoise_y: bool=True
+        denoise_y: bool=True,
+        path_to_save_imgs: str=None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
@@ -494,7 +501,8 @@ class DLNoiseReduction():
                 nr_threshold=nr_threshold,
                 max_epochs=max_epochs,
                 plot_progress=plot_progress,
-                denoise_y=denoise_y
+                denoise_y=denoise_y,
+                path_to_save_imgs=path_to_save_imgs
             )
         else:
             x_tensor, y_tensor = self._transform_time_series(
@@ -515,6 +523,7 @@ class DLNoiseReduction():
         nr_threshold: float=0.01,
         max_epochs: int=100,
         plot_progress: bool=False,
+        path_to_save_imgs: str=None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Fit the model to the input data and decrease the noise level in the input
@@ -538,7 +547,13 @@ class DLNoiseReduction():
             Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
         """
         self.fit(X, y)
-        x_denoised, y_denoised = self.transform(nrr, nr_threshold, max_epochs, plot_progress)
+        x_denoised, y_denoised = self.transform(
+            nrr=nrr,
+            nr_threshold=nr_threshold,
+            max_epochs=max_epochs,
+            plot_progress=plot_progress,
+            path_to_save_imgs=path_to_save_imgs
+        )
 
         return x_denoised, y_denoised
 
