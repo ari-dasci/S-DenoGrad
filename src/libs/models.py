@@ -268,6 +268,42 @@ class DenoisingAutoencoder(nn.Module):
         return decoded
 
 
+class TemporalDenoisingAutoencoder(nn.Module):
+    def __init__(self, input_dim, hidden_dim, kernel_size):
+        super(TemporalDenoisingAutoencoder, self).__init__()
+        # Codificador
+        self.encoder = nn.Sequential(
+            nn.Conv1d(
+                in_channels=input_dim,
+                out_channels=hidden_dim,
+                kernel_size=kernel_size,
+                padding=kernel_size // 2
+            ),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size=2)  # Reduce longitud temporal
+        )
+        # Decodificador
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose1d(
+                in_channels=hidden_dim,
+                out_channels=input_dim,
+                kernel_size=kernel_size,
+                padding=kernel_size // 2
+            ),
+            nn.ReLU(),
+            nn.Upsample(scale_factor=2, mode='linear', align_corners=True)
+        )
+    
+    def forward(self, x):
+        # Cambiar dimensiones de (batch, seq_len, feature_dim) a (batch, feature_dim, seq_len)
+        x = x.permute(0, 2, 1)
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        # Volver a la forma original (batch, seq_len, feature_dim)
+        decoded = decoded.permute(0, 2, 1)
+        return decoded
+
+
 # Trainer
 # ---------------------------------------------------------------------------- #
 class Trainer:
