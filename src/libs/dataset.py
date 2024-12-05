@@ -87,9 +87,9 @@ class SlidingWindowDataset(Dataset):
         return copy.deepcopy(self)
 
 
-class Dataset(Dataset):
+class DFDataset(Dataset):
     """
-    Custom dataset class
+    Dataframe Dataset
 
     Args:
         Dataset (Class): Inherits from the torch.utils.data.Dataset class
@@ -110,3 +110,16 @@ class Dataset(Dataset):
         target = torch.tensor(self.target_df.iloc[idx].tolist(), dtype=torch.float32)
 
         return features, target
+
+
+# Tensor Dataset
+class TensorDataset(Dataset):
+    def __init__(self, x, y):
+        self.x = torch.tensor(x, dtype=torch.float32).unsqueeze(1)
+        self.y = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, idx):
+        return self.x[idx], self.y[idx]
