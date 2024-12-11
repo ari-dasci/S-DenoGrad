@@ -114,9 +114,13 @@ class DFDataset(Dataset):
 
 # Tensor Dataset
 class TensorDataset(Dataset):
-    def __init__(self, x, y):
-        self.x = torch.tensor(x, dtype=torch.float32).unsqueeze(1)
-        self.y = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
+    def __init__(self, x, y, unsqueeze:bool =False):
+        self.x = torch.tensor(x, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.float32)
+
+        if unsqueeze:
+            self.x = self.x.unsqueeze(1)
+            self.y = self.y.unsqueeze(1)
 
     def __len__(self):
         return len(self.x)
