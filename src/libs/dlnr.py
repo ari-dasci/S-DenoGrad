@@ -316,7 +316,7 @@ class DLNoiseReduction():
                 if path_to_save_imgs:
                     img_name = f"{path_to_save_imgs}/grafico_{epoch}.png"
                     plt.savefig(img_name, dpi=300, bbox_inches='tight')
-                    
+
                 # Show the plots
                 display(fig)
                 # Clear the output
