@@ -27,7 +27,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import json
-from typing import List
 
 # Locals
 from utils import *
@@ -52,7 +51,7 @@ assert device.type == "cuda"
 
 # Functions definition
 # __________________________________________________________________________________________________
-def polinomial_function(x:float):
+def polynomial_function(x:float):
     """
     Function that takes in a value x and returns its polinomial value.
 
@@ -66,29 +65,11 @@ def polinomial_function(x:float):
     return x**4 -x**3 -20*(x**2) -20*x +6
 
 
-def add_gaussian_noise(df:pd.DataFrame, columns:List[str], mean:float = 0.0, std:float = 0.1):
-    """
-    Adds Gaussian noise to specified columns in a DataFrame.
-
-    Args:
-        df (pandas.DataFrame): The DataFrame to which noise will be added.
-        columns (list): A list of column names in the DataFrame to which noise will be added.
-        mean (int, optional): The mean of the Gaussian distribution. Defaults to 0.
-        std (float, optional): The standard deviation of the Gaussian distribution. Defaults to 0.1.
-
-    Returns:
-        pandas.DataFrame: The DataFrame with added Gaussian noise to specified columns.
-    """
-    for col in columns:
-        df[col] = df[col] + np.random.normal(loc=mean, scale=std, size=len(df))
-    return df
-
-
 # Main
 # __________________________________________________________________________________________________
 # Generate continious 2D data
 X_train = np.linspace(-5, 5, 10001)
-y_train = polinomial_function(X_train)
+y_train = polynomial_function(X_train)
 df_train = pd.DataFrame({'X': X_train, 'y': y_train})
 
 # Scale the noisy dataframe into [0,1] domain

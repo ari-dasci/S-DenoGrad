@@ -40,6 +40,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from ipywidgets import widgets
 from torch.utils.data import DataLoader
+from typing import List
 # Locals
 from dataset import SlidingWindowDataset
 
@@ -283,7 +284,7 @@ def plot_predictions(variable, variables_dict, visualize, futures,
     plt.show()
 
 
-def add_gaussian_noise(df, columns, mean=0, std=0.1):
+def add_gaussian_noise(df:pd.DataFrame, columns:List[str], mean:float = 0.0, std:float = 0.1):
     """
     Adds Gaussian noise to specified columns in a DataFrame.
 

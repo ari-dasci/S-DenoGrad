@@ -26,11 +26,11 @@ Description:
 # Add libs path to sys path and create some global path variables
 # ---------------------------------------------------------------------------- #
 import os
-import sys
 
 # Libraries
 # ---------------------------------------------------------------------------- #
 import copy
+import pickle
 import torch
 from torch import nn
 import numpy as np
@@ -643,7 +643,7 @@ class XAI_benchmark:
         self.ridge = Ridge(**model_params['ridge'])
         self.pls = PLSRegression(**model_params['pls'])
         self.decision_tree = DecisionTreeRegressor(**model_params['tree'])
-        self.svm = LinearSVR(**model_params['svm'])
+        self.svr = LinearSVR(**model_params['svm'])
         self.knn = KNeighborsRegressor(**model_params['knn'])
         if self.is_ts:
             self.arima = ARIMA(**model_params['arima'])
@@ -664,7 +664,7 @@ class XAI_benchmark:
         print('Fitting Decision Tree model...')
         self.decision_tree.fit(X, y)
         print('Fitting Support Vector Machine model...')
-        self.svm.fit(X, y)
+        self.svr.fit(X, y)
         print('Fitting K-Nearest Neighbours model...')
         self.knn.fit(X, y)
         if self.is_ts:
@@ -688,7 +688,7 @@ class XAI_benchmark:
             'ridge': self.ridge.predict(X),
             'pls': self.pls.predict(X),
             'decision_tree': self.decision_tree.predict(X),
-            'svm': self.svm.predict(X),
+            'svm': self.svr.predict(X),
             'knn': self.knn.predict(X)
         }
         metrics = {}
@@ -739,3 +739,21 @@ class XAI_benchmark:
                 }
 
         return predictions, metrics
+
+
+    def save(self, path:str):
+        """
+        Save the XAI models in pickle format.
+
+        Args:
+            path (str): path to save the models.
+        """
+        names = ['ridge', 'pls', 'decision_tree', 'svr', 'knn']
+        models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn]
+        for name, model in zip(names, models):
+            with open(os.path.join(path, f'{name}.pkl'), 'wb') as f:
+                pickle.dump(model, f)
+
+        if self.is_ts:
+            with open(os.path.join(path, 'arima.pkl'), 'wb') as f:
+                pickle.dump(self.arima, f)
