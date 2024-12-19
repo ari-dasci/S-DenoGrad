@@ -43,7 +43,7 @@ from sklearn.cross_decomposition import PLSRegression   # Partial least squares 
 from sklearn.tree import DecisionTreeRegressor          # Decision tree regression
 from sklearn.svm import LinearSVR                       # Linear support vector regression
 from sklearn.neighbors import KNeighborsRegressor       # K-neighbors regression
-from pmdarima import auto_arima                         # Auto ARIMA
+from pmdarima import ARIMA                              # Auto ARIMA
 
 # Locals
 from config import Colors
@@ -646,7 +646,7 @@ class XAI_benchmark:
         self.svm = LinearSVR(**model_params['svm'])
         self.knn = KNeighborsRegressor(**model_params['knn'])
         if self.is_ts:
-            self.arima = auto_arima(**model_params['arima'])
+            self.arima = ARIMA(**model_params['arima'])
 
 
     def fit(self, X:np.array, y:np.array) -> None:
@@ -728,7 +728,14 @@ class XAI_benchmark:
                     'rmse':np.sqrt(mean_squared_error(y_true, predictions['knn'])),
                     'mae':mean_absolute_error(y_true, predictions['knn']),
                     'R2':r2_score(y_true, predictions['knn'])
-                },
+                }
             }
+            if self.is_ts:
+                metrics['arima'] = {
+                    'mse':mean_squared_error(y_true, predictions['arima']),
+                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['arima'])),
+                    'mae':mean_absolute_error(y_true, predictions['arima']),
+                    'R2':r2_score(y_true, predictions['arima'])
+                }
 
         return predictions, metrics
