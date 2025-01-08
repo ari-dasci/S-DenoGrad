@@ -35,7 +35,8 @@ import torch
 from torch import nn
 import numpy as np
 from tqdm import tqdm
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 
 # XAI models
 from sklearn.linear_model import Ridge                  # Ridge regression
@@ -703,30 +704,35 @@ class XAI_benchmark:
                     'mse':mean_squared_error(y_true, predictions['ridge']),
                     'rmse':np.sqrt(mean_squared_error(y_true, predictions['ridge'])),
                     'mae':mean_absolute_error(y_true, predictions['ridge']),
+                    'mape':mean_absolute_percentage_error(y_true, predictions['ridge']),
                     'R2':r2_score(y_true, predictions['ridge'])
                 },
                 'pls': {
                     'mse':mean_squared_error(y_true, predictions['pls']),
                     'rmse':np.sqrt(mean_squared_error(y_true, predictions['pls'])),
                     'mae':mean_absolute_error(y_true, predictions['pls']),
+                    'mape':mean_absolute_percentage_error(y_true, predictions['pls']),
                     'R2':r2_score(y_true, predictions['pls'])
                 },
                 'decision_tree': {
                     'mse':mean_squared_error(y_true, predictions['decision_tree']),
                     'rmse':np.sqrt(mean_squared_error(y_true, predictions['decision_tree'])),
                     'mae':mean_absolute_error(y_true, predictions['decision_tree']),
+                    'mape':mean_absolute_percentage_error(y_true, predictions['decision_tree']),
                     'R2':r2_score(y_true, predictions['decision_tree'])
                 },
                 'svm': {
                     'mse':mean_squared_error(y_true, predictions['svm']),
                     'rmse':np.sqrt(mean_squared_error(y_true, predictions['svm'])),
                     'mae':mean_absolute_error(y_true, predictions['svm']),
+                    'mape':mean_absolute_percentage_error(y_true, predictions['svm']),
                     'R2':r2_score(y_true, predictions['svm'])
                 },
                 'knn': {
                     'mse':mean_squared_error(y_true, predictions['knn']),
                     'rmse':np.sqrt(mean_squared_error(y_true, predictions['knn'])),
                     'mae':mean_absolute_error(y_true, predictions['knn']),
+                    'mape':mean_absolute_percentage_error(y_true, predictions['knn']),
                     'R2':r2_score(y_true, predictions['knn'])
                 }
             }
@@ -735,25 +741,29 @@ class XAI_benchmark:
                     'mse':mean_squared_error(y_true, predictions['arima']),
                     'rmse':np.sqrt(mean_squared_error(y_true, predictions['arima'])),
                     'mae':mean_absolute_error(y_true, predictions['arima']),
+                    'mape':mean_absolute_percentage_error(y_true, predictions['arima']),
                     'R2':r2_score(y_true, predictions['arima'])
                 }
 
         return predictions, metrics
 
 
-    def save(self, path:str):
+    def save(self, path:str, subfix:str = ''):
         """
         Save the XAI models in pickle format.
 
         Args:
             path (str): path to save the models.
+            subfix (str): extra name for info.
         """
         names = ['ridge', 'pls', 'decision_tree', 'svr', 'knn']
         models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn]
         for name, model in zip(names, models):
-            with open(os.path.join(path, f'{name}.pkl'), 'wb') as f:
+            file_name = f'{name}_{subfix}.pkl' if subfix else f'{name}.pkl'
+            with open(os.path.join(path, file_name), 'wb') as f:
                 pickle.dump(model, f)
 
+        file_name = f'arima_{subfix}.pkl' if subfix else 'arima.pkl'
         if self.is_ts:
-            with open(os.path.join(path, 'arima.pkl'), 'wb') as f:
+            with open(os.path.join(path, file_name), 'wb') as f:
                 pickle.dump(self.arima, f)

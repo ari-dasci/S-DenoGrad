@@ -160,8 +160,5 @@ cython_debug/
 #.idea/
 
 logs/
-*.log
-# *.err
-# *.out
-
 imgs/
+out/

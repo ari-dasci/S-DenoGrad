@@ -1,0 +1,412 @@
+# pylint: disable=import-error
+# pylint: disable=wrong-import-position
+"""
+title: synthetic_2D_exp
+author: José Javier Alonso Ramos
+email: jjalonso@ugr.es
+institution: DaSCI - UGR
+
+Description:
+Performs a synthetic experiment with a 2D dataset.
+The experiment consists of generating a 2D dataset with a polinomial function and
+adding Gaussian noise to it. Then, a neural network model is trained to predict the target
+variable. Finally, the gradients are used to reduce the noise in the data.
+"""
+
+# Libraries & Global variables #
+# ------------------------------------------------------------------------------------------------ #
+# Public libraries
+import os
+import sys
+import json
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.model_selection import train_test_split
+from scipy.stats import entropy
+import torch
+from torch import nn, optim
+from torch.utils.data import DataLoader
+
+# Global variables
+CURRENT_DIR = os.getcwd()
+FOLDERS = CURRENT_DIR.split(os.sep)
+TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
+CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
+LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
+DATA_PATH = os.path.join(CURRENT_DIR, 'data')
+CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints')
+OUT_PATH = os.path.join(CURRENT_DIR, 'out')
+CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
+assert os.path.exists(LIBS_PATH)
+sys.path.append(LIBS_PATH)
+
+# Local libraries
+from utils import add_gaussian_noise
+from dataset import TensorDataset
+from models import Trainer, XAI_benchmark, GridFullyDenseNN
+from dlnr import DLNoiseReduction
+
+# Make sure that the GPU is being used
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+assert device.type == "cuda"
+
+
+# Functions definition #
+# ------------------------------------------------------------------------------------------------ #
+def polinomial_function(x_var:float):
+    """
+    Function that takes in a value x_var and returns its polinomial value.
+
+    Args:
+        x_var (float): value to be transformed.
+
+    Returns:
+        float: result of the polinomial function.
+    """
+
+    return x_var**4 -x_var**3 -20*(x_var**2) -20*x_var +6
+
+
+def dictionary_arrays_to_list(array_d:dict):
+    """
+    Run through a array_d dictionary converting its arrays to lists.
+
+    Args:
+        array_d (dict): dictionary which arrays we want to convert to lists.
+
+    Returns:
+        dict: dictionary with lists intead of arrays.
+    """
+    if isinstance(array_d, dict):
+        return {k: dictionary_arrays_to_list(v) for k, v in array_d.items()}
+    elif isinstance(array_d, np.ndarray):
+        return array_d.tolist()
+    else:
+        return array_d
+
+
+# Main #
+# ------------------------------------------------------------------------------------------------ #
+if __name__ == '__main__':
+    ## Generate data based on a polynomial function ##
+    ## ------------------------------------------------------------------------------------------ ##
+    predictions_dict = {}
+    metrics_dict = {}
+
+    X = np.linspace(-5, 5, 10001)
+    y = polinomial_function(X)
+
+    df_data = pd.DataFrame({'x': X, 'y': y})
+    scaler = MinMaxScaler()
+    df_data = pd.DataFrame(scaler.fit_transform(df_data), columns=['x', 'y'])
+    X_train, X_test, y_train, y_test = train_test_split(
+        df_data['x'].values, df_data['y'].values, test_size=0.2, random_state=42
+    )
+
+    ## Perform XAI benchmark over no noisy (or original) data ##
+    ## ------------------------------------------------------------------------------------------ ##
+    model_params = {
+        'ridge': {"alpha": 1.0},
+        'pls': {"n_components": 1},
+        'tree': {"max_depth": 5},
+        'svm': {"dual": 'auto'},
+        'knn': {
+            "n_neighbors": 5,
+            "weights": 'uniform',
+            "algorithm": 'auto',
+            "leaf_size": 30,
+            "p": 2,
+            "n_jobs": None
+        },
+    }
+    xai_benchmark_orig = XAI_benchmark(is_ts = False, model_params = model_params)
+    xai_benchmark_orig.fit(X_train.reshape(-1,1), y_train)
+    no_noise_pred, no_noise_metrics = xai_benchmark_orig.predict(
+        X_test.reshape(-1,1),
+        y_test, get_metrics=True
+    )
+
+    xai_benchmark_orig.save(
+        path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','2D', 'no_noise'),
+        subfix = 'no_noise'
+    )
+
+    predictions_dict['no_noise'] = no_noise_pred
+    metrics_dict['no_noise'] = no_noise_metrics
+
+    ## Calculate orignal histograms and correlation matrix ##
+    ## ------------------------------------------------------------------------------------------ ##
+    no_noise_corr = df_data.corr()
+
+    for col in df_data.columns:
+        hist, _ = np.histogram(df_data[col], bins=50, density=True)
+        histogram_no_noise[col] = hist + 1e-10
+
+    ## Add gaussian noise to the data in all variables ##
+    ## ------------------------------------------------------------------------------------------ ##
+    for sigma in np.arange(0.01, 0.02, 0.01):
+        sigma = round(sigma, 2)
+        print('\n')
+        print('\n')
+        print(f'» Ruido gaussiano aplicado a los datos con sigma={sigma}')
+        print('\n')
+        df_noisy = add_gaussian_noise(
+            df=df_data.copy(),
+            columns=list(df_data.columns),
+            mean=0.0,
+            std=sigma
+        )
+
+        noisy_corr = df_noisy.corr()
+
+        X_train_noisy, X_test_noisy, y_train_noisy, y_test_noisy = train_test_split(
+            df_noisy['x'].values, df_noisy['y'].values, test_size=0.2, random_state=42
+        )
+
+        ## Calculate noisy histograms and Kullback-Leibler divergence with original histograms ##
+        ## -------------------------------------------------------------------------------------- ##
+        histogram_noisy = {}
+        metrics_dict[sigma] = {}
+        for col in df_noisy.columns:
+            hist, _ = np.histogram(df_noisy[col], bins=50, density=True)
+            histogram_noisy[col] = hist + 1e-10
+
+        ## Perform XAI benchmark over Noisy (with 'sigma' level noise) data ##
+        ## -------------------------------------------------------------------------------------- ##
+        xai_benchmark_noisy = XAI_benchmark(is_ts = False, model_params = model_params)
+        xai_benchmark_noisy.fit(X_train_noisy.reshape(-1,1), y_train_noisy)
+        pred, metrics = xai_benchmark_noisy.predict(
+            X_test_noisy.reshape(-1,1),
+            y_test, get_metrics=True
+        )
+        xai_benchmark_noisy.save(
+            path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','2D', f'{sigma}'),
+            subfix = f'noise_{sigma}'
+        )
+        predictions_dict[sigma] = pred
+        metrics_dict[sigma] = metrics
+
+        ## Declare a Neural Network model and prepare the data to train it ##
+        ## -------------------------------------------------------------------------------------- ##
+        train_dataset = TensorDataset(
+            x=X_train_noisy.reshape(-1,1),
+            y=y_train_noisy.reshape(-1,1)
+        )
+        # Transform the data into a tensor
+        val_dataset = TensorDataset(
+            x=X_test_noisy.reshape(-1,1),
+            y=y_test_noisy.reshape(-1,1)
+        )
+
+        # Create the dataloaders
+        batch_size = 64
+        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
+                                      num_workers=0)
+        val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+
+        # Create Neural Network model
+        model = GridFullyDenseNN(
+            n_layers=4,
+            hidden_layers=[
+                (1, 1024),
+                (1024, 512),
+                (512, 1024),
+                (1024, 1),
+            ],
+            dropout_layers=[
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ],
+            activation_func_layers=[
+                nn.Sigmoid(),
+                nn.Sigmoid(),
+                nn.Sigmoid(),
+                nn.Sigmoid(),
+            ],
+            want_dropout=[
+                False,
+                False,
+                False,
+                False,
+            ],
+            want_linear=[
+                True,
+                True,
+                True,
+                True,
+            ],
+            want_activation=[
+                True,
+                True,
+                True,
+                True,
+            ],
+        )
+        model.to(device)
+
+        # Set model parameters and create the model Trainer object
+        lr = 0.001
+        criterion = nn.MSELoss()
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+
+        # Define the trainer
+        trainer_basic = Trainer(
+            model=model,
+            train_generator=train_dataloader,
+            val_generator=val_dataloader,
+            device=device,
+            criterion=criterion,
+            optimizer=optimizer,
+            epoch_scheduler=None,
+            batch_scheduler=None,
+            patience=15,
+            epochs=500,
+            checkpoints_path=os.path.join(
+                CHECKPOINT_PATH,
+                'tabular',
+                'synthetic',
+                '2D',
+                f'{sigma}',
+                f'nn_noisy_{sigma}'
+            )
+        )
+
+        ## Train the Neural Network ##
+        ## -------------------------------------------------------------------------------------- ##
+        model, _, _, _, _ = trainer_basic.fit(verbose=True)
+
+        ## Or load its weights from a checkpoint ##
+        ## -------------------------------------------------------------------------------------- ##
+        # model.load_state_dict(torch.load(
+        #     os.path.join(
+        #         CHECKPOINT_PATH,
+        #         'tabular',
+        #         'synthetic',
+        #         '2D',
+        #         f'{sigma}',
+        #         f'nn_noisy_{sigma}.pth'
+        #     )
+        # ))
+
+        ## Predict and get the metrics for de NN model ##
+        ## -------------------------------------------------------------------------------------- ##
+        y_pred_test = model(
+            torch.tensor(X_test_noisy.reshape(-1, 1)).float().to(device)
+        ).cpu().detach().numpy().reshape(-1)
+
+        # Show the metrics
+        gt_values = y_test_noisy
+        predicted_values = y_pred_test
+        mae = mean_absolute_error(gt_values, predicted_values)
+        mape = mean_absolute_percentage_error(gt_values, predicted_values)
+        mse = mean_squared_error(gt_values, predicted_values)
+        rmse = np.sqrt(mse)
+        r_squared = r2_score(gt_values, predicted_values)
+
+        nn_metrics = {
+            'mse': mse,
+            'rmse': rmse,
+            'mae': mae,
+            'mape': mape,
+            'R2': r_squared
+        }
+
+        predictions_dict[sigma]['nn'] = y_pred_test
+        metrics_dict[sigma]['nn'] = nn_metrics
+
+        ## Perform gradient-based denoising method ##
+        ## -------------------------------------------------------------------------------------- ##
+        df_no_noise = df_noisy.copy()
+        dlnr = DLNoiseReduction(model=model, criterion=criterion)
+        dlnr.fit(df_noisy['x'].values.reshape(-1, 1), df_noisy['y'].values.reshape(-1, 1))
+        df_no_noise['x'], df_no_noise['y'] = dlnr.transform(
+                                                        nrr=0.05,
+                                                        nr_threshold=0.01,
+                                                        max_epochs=200,
+                                                        plot_progress=False,
+                                                        path_to_save_imgs=None
+        )
+
+        denoised_corr = df_no_noise.corr()
+
+        ## Perform XAI benchmark over Denoised data ##
+        ## -------------------------------------------------------------------------------------- ##
+        xai_benchmark_denoised = XAI_benchmark(is_ts = False, model_params = model_params)
+        xai_benchmark_denoised.fit(df_no_noise['x'].values.reshape(-1,1), df_no_noise['y'].values)
+
+        # Get the predictions and metrics. Denoised models over denoised data.
+        pred_over_denoised, metric_over_denoised = xai_benchmark_denoised.predict(
+            df_no_noise['x'].values.reshape(-1,1),
+            df_no_noise['y'].values.reshape(-1,1),
+            get_metrics=True
+        )
+        # Get the predictions and metrics. Denoised models over no noise (original) data.
+        pred_over_orig, metric_over_orig = xai_benchmark_denoised.predict(
+            df_data['x'].values.reshape(-1,1),
+            df_data['y'].values,
+            get_metrics=True
+        )
+        # Get the predictions and metrics. Noisy models over denoised data.
+        noisy_over_denoised_pred, noisy_over_denoised_metrics = xai_benchmark_noisy.predict(
+            df_no_noise['x'].values.reshape(-1,1),
+            df_no_noise['y'].values.reshape(-1,1),
+            get_metrics=True
+        )
+
+        predictions_dict[sigma]['denoised_over_denoised'] = pred_over_denoised
+        metrics_dict[sigma]['denoised_over_denoised'] = metric_over_denoised
+        predictions_dict[sigma]['denoised_over_orig'] = pred_over_orig
+        metrics_dict[sigma]['denoised_over_orig'] = metric_over_orig
+        predictions_dict[sigma]['noisy_over_denoised'] = noisy_over_denoised_pred
+        metrics_dict[sigma]['noisy_over_denoised'] = noisy_over_denoised_metrics
+
+        # Correlation diff metrics
+        metrics_dict[sigma]['corr_diff_orig_noisy'] = np.abs(no_noise_corr - noisy_corr).values.mean()
+        metrics_dict[sigma]['corr_diff_orig_denoised'] = np.abs(
+            no_noise_corr - denoised_corr
+        ).values.mean()
+        metrics_dict[sigma]['corr_diff_noisy_denoised'] = np.abs(
+            noisy_corr - denoised_corr
+        ).values.mean()
+
+
+        ## Calculate denoised histograms and Kullback-Leibler ##
+        ## divergence with original and noisy histograms ##
+        ## -------------------------------------------------------------------------------------- ##
+        histogram_denoised = {}
+        for col in df_no_noise.columns:
+            hist, _ = np.histogram(df_no_noise[col], bins=50, density=True)
+            histogram_denoised[col] = hist + 1e-10
+
+            kl_div = entropy(histogram_no_noise[col], histogram_noisy[col])
+            metrics_dict[sigma][f'kl_orig_noisy_{col}'] = kl_div
+
+            kl_div = entropy(histogram_no_noise[col], histogram_denoised[col])
+            metrics_dict[sigma][f'kl_orig_denoised_{col}'] = kl_div
+
+            kl_div = entropy(histogram_noisy[col], histogram_denoised[col])
+            metrics_dict[sigma][f'kl_noisy_denoised_{col}'] = kl_div
+
+
+    ## Save the metrics and the predictions calculated over the entire script ##
+    ## ------------------------------------------------------------------------------------------ ##
+    predictions_dict = dictionary_arrays_to_list(predictions_dict)
+
+    # Save predictions
+    with open(
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'predictions.json'),
+        'w',
+        encoding='utf-8') as file:
+        json.dump(predictions_dict, file, ensure_ascii=False, indent=4)
+
+    # Save metrics
+    with open(
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'metrics.json'),
+        'w',
+        encoding='utf-8') as file:
+        json.dump(metrics_dict, file, ensure_ascii=False, indent=4)
