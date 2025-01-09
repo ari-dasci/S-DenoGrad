@@ -502,7 +502,7 @@ class Trainer:
             if exist_dir(os.path.dirname(self.checkpoints_path)):
                 torch.save(
                     self.model.state_dict(),
-                    f'{self.checkpoints_path}.pth'
+                    f'{self.checkpoints_path}'
                 )
 
             # if verbose:
@@ -638,8 +638,9 @@ class XAI_benchmark:
     """
     Class to perform model training in the style of PyTorch Lightning.
     """
-    def __init__(self, is_ts:bool = False, model_params:dict = None) -> None:
+    def __init__(self, is_ts:bool = False, model_params:dict = None, verbose:bool = True) -> None:
         self.is_ts = is_ts
+        self.verbose = verbose
 
         self.ridge = Ridge(**model_params['ridge'])
         self.pls = PLSRegression(**model_params['pls'])
@@ -658,21 +659,21 @@ class XAI_benchmark:
             X (np.array): input training data.
             y (np.array): target training data.
         """
-        print('Fitting Ridge model...')
+        if self.verbose: print('Fitting Ridge model...')
         self.ridge.fit(X, y)
-        print('Fitting Partial Least Squares model...')
+        if self.verbose: print('Fitting Partial Least Squares model...')
         self.pls.fit(X, y)
-        print('Fitting Decision Tree model...')
+        if self.verbose: print('Fitting Decision Tree model...')
         self.decision_tree.fit(X, y)
-        print('Fitting Support Vector Machine model...')
+        if self.verbose: print('Fitting Support Vector Machine model...')
         self.svr.fit(X, y)
-        print('Fitting K-Nearest Neighbours model...')
+        if self.verbose: print('Fitting K-Nearest Neighbours model...')
         self.knn.fit(X, y)
         if self.is_ts:
-            print('Fitting ARIMA model...')
+            if self.verbose: print('Fitting ARIMA model...')
             self.arima.fit(y)
 
-        print('All models fitted!')
+        if self.verbose: print('All models fitted!')
 
 
     def predict(self, X:np.array, y_true:np.array = None, get_metrics:bool = False) -> dict:
