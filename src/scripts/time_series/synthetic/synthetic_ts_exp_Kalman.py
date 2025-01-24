@@ -27,14 +27,11 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
+import pywt
 
 # Seed
 random.seed(42)
 np.random.seed(42)
-torch.manual_seed(42)
 
 # Global variables
 CURRENT_DIR = os.getcwd()
@@ -56,14 +53,7 @@ FORCE_TRAINING = False
 
 # Local libraries
 from utils import add_gaussian_noise
-from dataset import TensorDataset
-from models import Trainer, XAI_benchmark, GridFullyDenseNN
-from dlnr import DLNoiseReduction
-
-# Make sure that the GPU is being used
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-assert device.type == "cuda"
-
+from models import XAI_benchmark
 
 # Functions definition #
 # ------------------------------------------------------------------------------------------------ #
@@ -106,13 +96,14 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     predictions_dict = {}
     metrics_dict = {}
-
-    X = np.linspace(-5, 5, 10001)
-    y = polinomial_function(X)
-
-    df_data = pd.DataFrame({'x': X, 'y': y})
-    scaler = MinMaxScaler()
-    df_data = pd.DataFrame(scaler.fit_transform(df_data), columns=['x', 'y'])
+    df_data = pd.read_parquet(
+        os.path.join(
+            DATA_PATH,
+            'tabular',
+            'synthetic',
+            '3D.parquet'
+        )
+    )
     X_train, X_test, y_train, y_test = train_test_split(
         df_data['x'].values, df_data['y'].values, test_size=0.2, random_state=42
     )
@@ -222,14 +213,34 @@ if __name__ == '__main__':
         predictions_dict[sigma] = pred
         metrics_dict[sigma] = metrics
 
-        ## Denoise the data using Moving Average method ##
+        ## Denoise the data using Kalman Filter ##
         ## -------------------------------------------------------------------------------------- ##
-        window_size = 5
-        df_denoised = pd.DataFrame()
-        df_denoised['x'] = df_noisy['x'].rolling(window=window_size, min_periods=1).mean()
-        df_denoised['y'] = df_noisy['y'].rolling(window=window_size, min_periods=1).mean()
+        filtered_signal = []
+        # Inicialización del Filtro de Kalman
+        F = 1  # Matriz de transición (1D, sin dinámica compleja)
+        H = 1  # Matriz de observación
+        Q = 0.01  # Varianza del ruido del proceso
+        R = 0.25  # Varianza del ruido de medición
+        x = 0  # Estado inicial
+        P = 1  # Varianza inicial
 
-        # Show the metrics
+        # Filtro de Kalman
+        for z in df_noisy.values:
+            # Predicción
+            x_pred = F * x
+            P_pred = F * P * F + Q
+
+            # Actualización
+            K = P_pred * H / (H * P_pred * H + R)  # Ganancia de Kalman
+            x = x_pred + K * (z - H * x_pred)
+            P = (1 - K * H) * P_pred
+
+            # Guardar el estado filtrado
+            filtered_signal.append(x)
+
+        df_denoised = pd.DataFrame(filtered_signal, columns = df_noisy.columns)
+
+        # Calc the metrics
         gt_values = df_data.values
         if sigma == 'mix':
             gt_values = np.tile(gt_values, (15,1))
@@ -248,8 +259,8 @@ if __name__ == '__main__':
             'R2': r_squared
         }
 
-        predictions_dict[sigma]['moving_average'] = predicted_values
-        metrics_dict[sigma]['moving_average'] = nn_metrics
+        predictions_dict[sigma]['kalman_transform'] = predicted_values
+        metrics_dict[sigma]['kalman_transform'] = nn_metrics
 
         denoised_corr = df_denoised.corr()
 
@@ -327,7 +338,7 @@ if __name__ == '__main__':
 
     # Save predictions
     with open(
-        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'ma_predictions.json'),
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'kalman_predictions.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(predictions_dict, file, ensure_ascii=False, indent=4)
@@ -335,7 +346,7 @@ if __name__ == '__main__':
     metrics_dict = dictionary_arrays_to_list(metrics_dict)
     # Save metrics
     with open(
-        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'ma_metrics.json'),
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'kalman_metrics.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(metrics_dict, file, ensure_ascii=False, indent=4)

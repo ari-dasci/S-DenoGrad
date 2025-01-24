@@ -255,7 +255,7 @@ class DLNoiseReduction():
 
         epoch = 0
         apply_gradient = [True, True]
-        while epoch < max_epochs and sum(apply_gradient) > 0:
+        while epoch < max_epochs and np.array(apply_gradient).any() > 0:
             x_tensor = torch.tensor(x_tensor, requires_grad=True)
             y_tensor = torch.tensor(y_tensor, requires_grad=True)
 
@@ -292,9 +292,9 @@ class DLNoiseReduction():
             grad_l_x = grad_l_x / l2_grad
             grad_l_y = grad_l_y / l2_grad
 
-            x_tensor -= grad_l_x*nrr*apply_gradient
+            x_tensor -= grad_l_x*nrr*apply_gradient.sum(axis=1)[:, np.newaxis]
             if denoise_y:
-                y_tensor -= grad_l_y*nrr*apply_gradient
+                y_tensor -= grad_l_y*nrr*apply_gradient.sum(axis=1)[:, np.newaxis]
 
             # Plot the progression of noise reduction if specified
             if plot_progress:
@@ -351,6 +351,8 @@ class DLNoiseReduction():
         """
         # Accelerate the runtime by finding the best cuda configuration
         torch.backends.cudnn.benchmark = True
+        self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
+        self._model.train() # RNN backward allowed.
         epoch = 0
         apply_gradient = [True, True]
         with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
@@ -425,12 +427,12 @@ class DLNoiseReduction():
                     if self.is_cnn:
                         grad_l_x_shape = grad_l_x.shape[1]
                         grad_l_x = grad_l_x.T
-                    self._x_noisy.X.loc[n_window:n_window+grad_l_x_shape-1] -= grad_l_x
+                    self._x_noisy.X[n_window:n_window+grad_l_x_shape] -= grad_l_x
 
                     if denoise_y:
                         grad_l_y = grad_l_y.mean()
                         grad_l_y = grad_l_y*nrr*apply_gradient
-                        self._x_noisy.Y.loc[n_window:n_window+grad_l_y.shape[0]-1] -= grad_l_y
+                        self._x_noisy.Y[n_window:n_window+grad_l_y.shape[0]] -= grad_l_y
                     apply_gradient_time_end = time.time()#######################################
 
                     n_window += 1

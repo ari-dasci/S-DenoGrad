@@ -27,14 +27,11 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
+from PyEMD import EMD
 
 # Seed
 random.seed(42)
 np.random.seed(42)
-torch.manual_seed(42)
 
 # Global variables
 CURRENT_DIR = os.getcwd()
@@ -53,34 +50,16 @@ sys.path.append(LIBS_PATH)
 VERBOSE = False
 # Even if there is a checkpoint, the model is retrained.
 FORCE_TRAINING = False
+# Name of this experiment that will appear in the result files.
+SUBFIX_NAME = 'emd'
+IS_TS = True
 
 # Local libraries
 from utils import add_gaussian_noise
-from dataset import TensorDataset
-from models import Trainer, XAI_benchmark, GridFullyDenseNN
-from dlnr import DLNoiseReduction
-
-# Make sure that the GPU is being used
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-assert device.type == "cuda"
-
+from models import XAI_benchmark
 
 # Functions definition #
 # ------------------------------------------------------------------------------------------------ #
-def polinomial_function(x_var:float):
-    """
-    Function that takes in a value x_var and returns its polinomial value.
-
-    Args:
-        x_var (float): value to be transformed.
-
-    Returns:
-        float: result of the polinomial function.
-    """
-
-    return x_var**4 -x_var**3 -20*(x_var**2) -20*x_var +6
-
-
 def dictionary_arrays_to_list(array_d:dict):
     """
     Run through a array_d dictionary converting its arrays to lists.
@@ -106,13 +85,14 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     predictions_dict = {}
     metrics_dict = {}
-
-    X = np.linspace(-5, 5, 10001)
-    y = polinomial_function(X)
-
-    df_data = pd.DataFrame({'x': X, 'y': y})
-    scaler = MinMaxScaler()
-    df_data = pd.DataFrame(scaler.fit_transform(df_data), columns=['x', 'y'])
+    df_data = pd.read_parquet(
+        os.path.join(
+            DATA_PATH,
+            'tabular',
+            'synthetic',
+            '3D.parquet'
+        )
+    )
     X_train, X_test, y_train, y_test = train_test_split(
         df_data['x'].values, df_data['y'].values, test_size=0.2, random_state=42
     )
@@ -222,110 +202,22 @@ if __name__ == '__main__':
         predictions_dict[sigma] = pred
         metrics_dict[sigma] = metrics
 
-        ## Declare a Neural Network model and prepare the data to train it ##
+        ## Denoise the data using Empirical Mode Decomposition ##
         ## -------------------------------------------------------------------------------------- ##
-        train_dataset = TensorDataset(
-            x=X_train_noisy.reshape(-1,1),
-            y=y_train_noisy.reshape(-1,1)
-        )
-        # Transform the data into a tensor
-        val_dataset = TensorDataset(
-            x=X_test_noisy.reshape(-1,1),
-            y=y_test_noisy.reshape(-1,1)
-        )
+        # EMD decomposition
+        df_denoised = pd.DataFrame(columns=df_noisy.columns)
 
-        # Create the dataloaders
-        batch_size = 64
-        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
-                                      num_workers=0)
-        val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+        for col in df_noisy.columns:
+            emd = EMD()
+            imfs = emd(df_noisy[col].values)
+            # Reconstruction of the signal
+            df_denoised[col] = np.sum(imfs[2:], axis=0)
 
-        # Create Neural Network model
-        model = GridFullyDenseNN(
-            n_layers=4,
-            hidden_layers=[
-                (1, 1024),
-                (1024, 512),
-                (512, 1024),
-                (1024, 1),
-            ],
-            dropout_layers=[
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            ],
-            activation_func_layers=[
-                nn.Sigmoid(),
-                nn.Sigmoid(),
-                nn.Sigmoid(),
-                nn.Sigmoid(),
-            ],
-            want_dropout=[
-                False,
-                False,
-                False,
-                False,
-            ],
-            want_linear=[
-                True,
-                True,
-                True,
-                True,
-            ],
-            want_activation=[
-                True,
-                True,
-                True,
-                True,
-            ],
-        )
-        model.to(device)
-
-        # Set model parameters and create the model Trainer object
-        lr = 0.001
-        criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters(), lr=lr)
-        denoiser_checkpoint_path = os.path.join(
-            CHECKPOINT_PATH,
-            'tabular',
-            'synthetic',
-            '2D',
-            f'{sigma}',
-            f'nn_noisy_{sigma}.pth'
-        )
-
-        # Define the trainer
-        trainer_basic = Trainer(
-            model=model,
-            train_generator=train_dataloader,
-            val_generator=val_dataloader,
-            device=device,
-            criterion=criterion,
-            optimizer=optimizer,
-            epoch_scheduler=None,
-            batch_scheduler=None,
-            patience=15,
-            epochs=500,
-            checkpoints_path=denoiser_checkpoint_path
-        )
-
-        ## Train the Neural Network or load its weights from a checkpoint ##
-        ## -------------------------------------------------------------------------------------- ##
-        if os.path.exists(denoiser_checkpoint_path) and not FORCE_TRAINING:
-            model.load_state_dict(torch.load(denoiser_checkpoint_path))
-        else:
-            model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
-
-        ## Predict and get the metrics for de NN model ##
-        ## -------------------------------------------------------------------------------------- ##
-        y_pred_test = model(
-            torch.tensor(X_test_noisy.reshape(-1, 1)).float().to(device)
-        ).cpu().detach().numpy().reshape(-1)
-
-        # Show the metrics
-        gt_values = y_test_noisy
-        predicted_values = y_pred_test
+        # Calc the metrics
+        gt_values = df_data.values
+        if sigma == 'mix':
+            gt_values = np.tile(gt_values, (15,1))
+        predicted_values = df_denoised.values
         mae = mean_absolute_error(gt_values, predicted_values)
         mape = mean_absolute_percentage_error(gt_values, predicted_values)
         mse = mean_squared_error(gt_values, predicted_values)
@@ -340,21 +232,8 @@ if __name__ == '__main__':
             'R2': r_squared
         }
 
-        predictions_dict[sigma]['nn'] = y_pred_test
-        metrics_dict[sigma]['nn'] = nn_metrics
-
-        ## Perform gradient-based denoising method ##
-        ## -------------------------------------------------------------------------------------- ##
-        df_denoised = df_noisy.copy()
-        dlnr = DLNoiseReduction(model=model, criterion=criterion)
-        dlnr.fit(df_noisy['x'].values.reshape(-1, 1), df_noisy['y'].values.reshape(-1, 1))
-        df_denoised['x'], df_denoised['y'] = dlnr.transform(
-                                                        nrr=0.05,
-                                                        nr_threshold=0.01,
-                                                        max_epochs=200,
-                                                        plot_progress=False,
-                                                        path_to_save_imgs=None
-        )
+        predictions_dict[sigma]['emd'] = predicted_values
+        metrics_dict[sigma]['emd'] = nn_metrics
 
         denoised_corr = df_denoised.corr()
 
@@ -367,7 +246,7 @@ if __name__ == '__main__':
         xai_benchmark_denoised.fit(df_denoised['x'].values.reshape(-1,1), df_denoised['y'].values)
         xai_benchmark_denoised.save(
             path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','2D', f'{sigma}'),
-            subfix = f'gradient_denoised_{sigma}'
+            subfix = f'ma_denoised_{sigma}'
         )
 
         # Get the predictions and metrics. Denoised models over denoised data.
@@ -432,7 +311,7 @@ if __name__ == '__main__':
 
     # Save predictions
     with open(
-        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'gradient_predictions.json'),
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'emd_predictions.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(predictions_dict, file, ensure_ascii=False, indent=4)
@@ -440,7 +319,7 @@ if __name__ == '__main__':
     metrics_dict = dictionary_arrays_to_list(metrics_dict)
     # Save metrics
     with open(
-        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'gradient_metrics.json'),
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'emd_metrics.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(metrics_dict, file, ensure_ascii=False, indent=4)

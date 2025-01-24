@@ -42,7 +42,7 @@ from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from sklearn.linear_model import Ridge                  # Ridge regression
 from sklearn.cross_decomposition import PLSRegression   # Partial least squares regression
 from sklearn.tree import DecisionTreeRegressor          # Decision tree regression
-from sklearn.svm import LinearSVR                       # Linear support vector regression
+from sklearn.svm import SVR                             # Linear support vector regression
 from sklearn.neighbors import KNeighborsRegressor       # K-neighbors regression
 from pmdarima import ARIMA                              # Auto ARIMA
 
@@ -565,7 +565,11 @@ class Trainer:
                 ) * len(batch_x)
 
                 if verbose:
-                    batches_progress_bar.set_postfix_str(f"Train loss: {train_loss / len(self.train_dataloader.dataset)} - Val loss: {val_losses[-1] if val_losses else 'N/A'}")
+                    train_loss_str = train_loss / len(self.train_dataloader.dataset)
+                    batches_progress_bar.set_postfix_str(
+                        f"Train loss: {train_loss_str:.4f} - Val loss: {val_losses[-1]:.4f}" 
+                        if val_losses else f"Train loss: {train_loss_str:.4f} - Val loss: N/A"
+                    )
 
             # Calculate average loss
             train_loss /= len(self.train_dataloader.dataset)
@@ -573,7 +577,12 @@ class Trainer:
 
             if verbose:
                 #print(f'\t» Train Loss: {train_loss}')
-                epochs_progress_bar.set_postfix_str(f"Train loss: {train_losses[-1] if train_losses else 'N/A'} - Val loss: {val_losses[-1] if val_losses else 'N/A'}")
+                epochs_progress_bar.set_postfix_str(
+                    f"Train loss: {train_losses[-1]:.4f} - Val loss: {val_losses[-1]:.4f}" 
+                    if train_losses and val_losses else 
+                    f"Train loss: {train_losses[-1]:.4f}" if train_losses else 
+                    "Train loss: N/A - Val loss: N/A"
+                )
 
             # Validation
             # __________________________________________________________________
@@ -595,7 +604,10 @@ class Trainer:
 
                 if verbose:
                     # print(f'\t» Val Loss: {val_loss}')
-                    epochs_progress_bar.set_postfix_str(f"Train loss: {train_losses[-1] if train_losses else 'N/A'} - Val loss: {val_losses[-1] if val_losses else 'N/A'}")
+                    epochs_progress_bar.set_postfix_str(
+                        f"Train loss: {train_losses[-1]:.4f}" if train_losses else "Train loss: N/A" + 
+                        f" - Val loss: {val_losses[-1]:.4f}" if val_losses else " - Val loss: N/A"
+                    )
 
             # Early Stopping
             val_loss, train_loss = (val_loss, train_loss) if self.val_dataloader is not None else (train_loss, train_loss)
@@ -642,13 +654,31 @@ class XAI_benchmark:
         self.is_ts = is_ts
         self.verbose = verbose
 
-        self.ridge = Ridge(**model_params['ridge'])
-        self.pls = PLSRegression(**model_params['pls'])
-        self.decision_tree = DecisionTreeRegressor(**model_params['tree'])
-        self.svr = LinearSVR(**model_params['svm'])
-        self.knn = KNeighborsRegressor(**model_params['knn'])
+        if model_params['ridge']:
+            self.ridge = Ridge(**model_params['ridge'])
+        else:
+            self.ridge = None
+        if model_params['pls']:
+            self.pls = PLSRegression(**model_params['pls'])
+        else:
+            self.pls = None
+        if model_params['tree']:
+            self.decision_tree = DecisionTreeRegressor(**model_params['tree'])
+        else:
+            self.decision_tree = None
+        if model_params['svm']:
+            self.svr = SVR(**model_params['svm'])
+        else:
+            self.svr = None
+        if model_params['knn']:
+            self.knn = KNeighborsRegressor(**model_params['knn'])
+        else:
+            self.knn = None
         if self.is_ts:
-            self.arima = ARIMA(**model_params['arima'])
+            if model_params['arima']:
+                self.arima = ARIMA(**model_params['arima'])
+            else:
+                self.arima = None
 
 
     def fit(self, X:np.array, y:np.array) -> None:
@@ -659,21 +689,34 @@ class XAI_benchmark:
             X (np.array): input training data.
             y (np.array): target training data.
         """
-        if self.verbose: print('Fitting Ridge model...')
-        self.ridge.fit(X, y)
-        if self.verbose: print('Fitting Partial Least Squares model...')
-        self.pls.fit(X, y)
-        if self.verbose: print('Fitting Decision Tree model...')
-        self.decision_tree.fit(X, y)
-        if self.verbose: print('Fitting Support Vector Machine model...')
-        self.svr.fit(X, y)
-        if self.verbose: print('Fitting K-Nearest Neighbours model...')
-        self.knn.fit(X, y)
+        if self.verbose:
+            print('Fitting Ridge model...')
+        if self.ridge:
+            self.ridge.fit(X, y)
+        if self.verbose:
+            print('Fitting Partial Least Squares model...')
+        if self.pls:
+            self.pls.fit(X, y)
+        if self.verbose:
+            print('Fitting Decision Tree model...')
+        if self.decision_tree:
+            self.decision_tree.fit(X, y)
+        if self.verbose:
+            print('Fitting Support Vector Machine model...')
+        if self.svr:
+            self.svr.fit(X, y)
+        if self.verbose:
+            print('Fitting K-Nearest Neighbours model...')
+        if self.knn:
+            self.knn.fit(X, y)
         if self.is_ts:
-            if self.verbose: print('Fitting ARIMA model...')
-            self.arima.fit(y)
+            if self.verbose:
+                print('Fitting ARIMA model...')
+            if self.arima:
+                self.arima.fit(y)
 
-        if self.verbose: print('All models fitted!')
+        if self.verbose:
+            print('All models fitted!')
 
 
     def predict(self, X:np.array, y_true:np.array = None, get_metrics:bool = False) -> dict:
@@ -687,64 +730,34 @@ class XAI_benchmark:
             dictionary: dictionary with all the models predictions.
         """
         predictions = {
-            'ridge': self.ridge.predict(X),
-            'pls': self.pls.predict(X),
-            'decision_tree': self.decision_tree.predict(X),
-            'svm': self.svr.predict(X),
-            'knn': self.knn.predict(X)
+            'ridge': self.ridge.predict(X) if self.ridge else None,
+            'pls': self.pls.predict(X) if self.pls else None,
+            'decision_tree': self.decision_tree.predict(X) if self.decision_tree else None,
+            'svm': self.svr.predict(X) if self.svr else None,
+            'knn': self.knn.predict(X) if self.knn else None,
+            'arima': self.arima.predict(n_periods=X.shape[0]) if self.is_ts and self.arima else None
         }
         metrics = {}
 
-        if self.is_ts:
-            predictions['arima'] = self.arima.predict(n_periods=X.shape[0])
-
         if get_metrics:
             assert y_true is not None, 'y must be provided to calculate metrics.'
-            metrics = {
-                'ridge': {
-                    'mse':mean_squared_error(y_true, predictions['ridge']),
-                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['ridge'])),
-                    'mae':mean_absolute_error(y_true, predictions['ridge']),
-                    'mape':mean_absolute_percentage_error(y_true, predictions['ridge']),
-                    'R2':r2_score(y_true, predictions['ridge'])
-                },
-                'pls': {
-                    'mse':mean_squared_error(y_true, predictions['pls']),
-                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['pls'])),
-                    'mae':mean_absolute_error(y_true, predictions['pls']),
-                    'mape':mean_absolute_percentage_error(y_true, predictions['pls']),
-                    'R2':r2_score(y_true, predictions['pls'])
-                },
-                'decision_tree': {
-                    'mse':mean_squared_error(y_true, predictions['decision_tree']),
-                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['decision_tree'])),
-                    'mae':mean_absolute_error(y_true, predictions['decision_tree']),
-                    'mape':mean_absolute_percentage_error(y_true, predictions['decision_tree']),
-                    'R2':r2_score(y_true, predictions['decision_tree'])
-                },
-                'svm': {
-                    'mse':mean_squared_error(y_true, predictions['svm']),
-                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['svm'])),
-                    'mae':mean_absolute_error(y_true, predictions['svm']),
-                    'mape':mean_absolute_percentage_error(y_true, predictions['svm']),
-                    'R2':r2_score(y_true, predictions['svm'])
-                },
-                'knn': {
-                    'mse':mean_squared_error(y_true, predictions['knn']),
-                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['knn'])),
-                    'mae':mean_absolute_error(y_true, predictions['knn']),
-                    'mape':mean_absolute_percentage_error(y_true, predictions['knn']),
-                    'R2':r2_score(y_true, predictions['knn'])
-                }
-            }
-            if self.is_ts:
-                metrics['arima'] = {
-                    'mse':mean_squared_error(y_true, predictions['arima']),
-                    'rmse':np.sqrt(mean_squared_error(y_true, predictions['arima'])),
-                    'mae':mean_absolute_error(y_true, predictions['arima']),
-                    'mape':mean_absolute_percentage_error(y_true, predictions['arima']),
-                    'R2':r2_score(y_true, predictions['arima'])
-                }
+            for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima']:
+                if predictions.get(model) is not None:
+                    metrics[model] = {
+                        'mse': mean_squared_error(y_true, predictions[model]),
+                        'rmse': np.sqrt(mean_squared_error(y_true, predictions[model])),
+                        'mae': mean_absolute_error(y_true, predictions[model]),
+                        'mape': mean_absolute_percentage_error(y_true, predictions[model]),
+                        'R2': r2_score(y_true, predictions[model])
+                    }
+                else:
+                    metrics[model] = {
+                        'mse': None,
+                        'rmse': None,
+                        'mae': None,
+                        'mape': None,
+                        'R2': None
+                    }
 
         return predictions, metrics
 
@@ -768,3 +781,35 @@ class XAI_benchmark:
         if self.is_ts:
             with open(os.path.join(path, file_name), 'wb') as f:
                 pickle.dump(self.arima, f)
+
+
+    def load(self, folder_path:str):
+        """
+        Save the XAI models in pickle format.
+
+        Args:
+            folder_path (str): path to saved models.
+        """
+        names = ['ridge', 'pls', 'decision', 'svr', 'knn', 'arima']
+        models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn, self.arima]
+        loaded_models = {}
+
+        for file_name in os.listdir(folder_path):
+            full_path = os.path.join(folder_path, file_name)
+            if os.path.isfile(full_path):
+                subfix = file_name.split('_')[0]
+                try:
+                    i_list = names.index(subfix)
+                    with open(full_path, 'rb') as f:
+                        loaded_models[names[i_list]] = pickle.load(f)
+                        print(f'Loaded {names[i_list]} model')
+                except Exception as e:
+                    print(f'Error loading model {file_name}: {e}')
+
+        # Update attributes in self
+        self.ridge = loaded_models.get('ridge', self.ridge)
+        self.pls = loaded_models.get('pls', self.pls)
+        self.decision_tree = loaded_models.get('decision', self.decision_tree)
+        self.svr = loaded_models.get('svr', self.svr)
+        self.knn = loaded_models.get('knn', self.knn)
+        self.arima = loaded_models.get('arima', self.arima)
