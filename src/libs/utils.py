@@ -28,12 +28,12 @@ Classes:
 """
 
 # Add libs path to sys path and create some global path variables
-# ---------------------------------------------------------------------------- #
+# ------------------------------------------------------------------------------------------------ #
 import os
 import sys
 
 # Import libraries
-# ---------------------------------------------------------------------------- #
+# ------------------------------------------------------------------------------------------------ #
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -46,7 +46,8 @@ from dataset import SlidingWindowDataset
 
 
 # EDA Functions
-# ---------------------------------------------------------------------------- #
+# ------------------------------------------------------------------------------------------------ #
+
 def na_heatmap(df, cmap='viridis', label='Missing Data Heatmap'):
     """
     Show a heatmap about the missing data of df
@@ -130,8 +131,28 @@ def get_outliers(df, variable):
     return outliers
 
 
+# Metrics
+# ------------------------------------------------------------------------------------------------ #
+def symmetric_mean_absolute_percentage_error(y_true, y_pred):
+    """
+    Calcula el Symmetric Mean Absolute Percentage Error (SMAPE).
+    
+    Parámetros:
+    - y_true: array de valores reales.
+    - y_pred: array de valores predichos.
+    
+    Retorna:
+    - SMAPE como un porcentaje (%).
+    """
+    y_true, y_pred = np.array(y_true), np.array(y_pred)
+    epsilon = 1e-10
+    denominator = (np.abs(y_true) + np.abs(y_pred)) / 2 + epsilon
+    smape = np.mean(np.abs(y_true - y_pred) / denominator) * 100
+    return smape
+
+
 # General functions
-# ---------------------------------------------------------------------------- #
+# ------------------------------------------------------------------------------------------------ #
 def win_generator(df, target_column, timesteps, future):
     """
     Sliding window generator 'on-the-fly'

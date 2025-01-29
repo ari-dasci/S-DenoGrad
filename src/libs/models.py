@@ -44,7 +44,8 @@ from sklearn.cross_decomposition import PLSRegression   # Partial least squares 
 from sklearn.tree import DecisionTreeRegressor          # Decision tree regression
 from sklearn.svm import SVR                             # Linear support vector regression
 from sklearn.neighbors import KNeighborsRegressor       # K-neighbors regression
-from pmdarima import ARIMA                              # Auto ARIMA
+from pmdarima import ARIMA                              # ARIMA
+from pmdarima import auto_arima                         # Auto ARIMA
 
 # Locals
 from config import Colors
@@ -675,6 +676,11 @@ class XAI_benchmark:
         else:
             self.knn = None
         if self.is_ts:
+            if model_params['auto_arima']:
+                self.auto_arima = auto_arima(**model_params['auto_arima'])
+                print(self.auto_arima.summary())
+            else:
+                self.auto_arima = None
             if model_params['arima']:
                 self.arima = ARIMA(**model_params['arima'])
             else:
@@ -710,16 +716,21 @@ class XAI_benchmark:
         if self.knn:
             self.knn.fit(X, y)
         if self.is_ts:
-            if self.verbose:
-                print('Fitting ARIMA model...')
+            model = ''
             if self.arima:
                 self.arima.fit(y)
+                model = 'ARIMA'
+            elif self.auto_arima:
+                # self.arima = self.auto_arima.fit(y)
+                model = 'Auto ARIMA'
+            if self.verbose:
+                print(f'Fitting {model} model...')
 
         if self.verbose:
             print('All models fitted!')
 
 
-    def predict(self, X:np.array, y_true:np.array = None, get_metrics:bool = False) -> dict:
+    def predict(self, X:np.array, y_true:np.array = None, n_periods:int = None, get_metrics:bool = False) -> dict:
         """
         Predict with all XAI models.
 
@@ -735,13 +746,14 @@ class XAI_benchmark:
             'decision_tree': self.decision_tree.predict(X) if self.decision_tree else None,
             'svm': self.svr.predict(X) if self.svr else None,
             'knn': self.knn.predict(X) if self.knn else None,
-            'arima': self.arima.predict(n_periods=X.shape[0]) if self.is_ts and self.arima else None
+            'arima': self.arima.predict(n_periods=n_periods, X=X) if n_periods and self.is_ts and self.arima else None,
+            'auto_arima': self.auto_arima.predict(n_periods=n_periods) if n_periods and self.is_ts and self.auto_arima else None
         }
         metrics = {}
 
         if get_metrics:
             assert y_true is not None, 'y must be provided to calculate metrics.'
-            for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima']:
+            for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima', 'auto_arima']:
                 if predictions.get(model) is not None:
                     metrics[model] = {
                         'mse': mean_squared_error(y_true, predictions[model]),
