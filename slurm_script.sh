@@ -1,10 +1,10 @@
 #!/bin/bash
 
-#SBATCH --job-name nr_pol                 # Nombre del proceso
-#SBATCH --partition dgx2                       # Cola para ejecutar
-#SBATCH --gres=gpu:1 		                    # Numero de gpus a usar
-#SBATCH -o /mnt/homeGPU/JJavierAR/S-noise-gradient/logs/polinomial.out  # Nombre del archivo de salida
-#SBATCH -e /mnt/homeGPU/JJavierAR/S-noise-gradient/logs/polinomial.err  # Nombre del archivo de error
+#SBATCH --job-name ECL-grad                 # Nombre del proceso
+#SBATCH --partition dgx2                    # Cola para ejecutar
+#SBATCH --gres=gpu:1 	                    # Numero de gpus a usar
+#SBATCH -o /mnt/homeGPU/JJavierAR/S-noise-gradient/logs/ECL_grad_dgx2.out  # Nombre del archivo de salida
+#SBATCH -e /mnt/homeGPU/JJavierAR/S-noise-gradient/logs/ECL_grad_dgx2.err  # Nombre del archivo de error
 	
 export PATH="/opt/anaconda/anaconda3/bin:$PATH"
 export PATH="/opt/anaconda/bin:$PATH"
@@ -16,4 +16,4 @@ export TFHUB_CACHE_DIR=.
 # Printing the current working directory
 # current_directory=$(pwd)
 # echo "Current Working Directory: $current_directory"
-python /mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/polinomial_full_exp.py --share True
+python /mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/ECL/gradient.py

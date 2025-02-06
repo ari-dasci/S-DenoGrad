@@ -1,14 +1,14 @@
 # pylint: disable=import-error
 # pylint: disable=wrong-import-position
 """
-title: real_ECL_exp
+title: real_mcfrosfot_stock_exp
 author: José Javier Alonso Ramos
 email: jjalonso@ugr.es
 institution: DaSCI - UGR
 
 Description:
-Performs a real experiment with a ECL dataset.
-The experiment consists of generating a ECL dataset with a polinomial function and
+Performs a real experiment with a microsoft_stock dataset.
+The experiment consists of generating a microsoft_stock dataset with a polinomial function and
 adding Gaussian noise to it. Then, a neural network model is trained to predict the target
 variable. Finally, the gradients are used to reduce the noise in the data.
 """
@@ -41,9 +41,9 @@ FOLDERS = CURRENT_DIR.split(os.sep)
 TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'ECL')
-CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'ECL')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'ECL')
+DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'microsoft_stock')
+CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'microsoft_stock')
+OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'microsoft_stock')
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
@@ -51,7 +51,7 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING_PRE_XAI = False
+FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
@@ -106,7 +106,7 @@ if __name__ == '__main__':
         )
     )
 
-    df_data.rename(columns={"MT_320": "y"}, inplace=True)
+    df_data.rename(columns={"Close": "y"}, inplace=True)
 
     # scale the data
     scaler = MinMaxScaler()
@@ -115,10 +115,6 @@ if __name__ == '__main__':
     # assert there is no more categorical variables
     columnas_categoricas = df_data.select_dtypes(include=['object', 'category']).columns
     assert not list(columnas_categoricas)
-
-
-    df_data = df_data.iloc[-5000:].copy()
-
 
     # Desplazar la última columna hacia arriba
     df_data['y_shifted'] = df_data['y'].shift(-1)
@@ -148,23 +144,23 @@ if __name__ == '__main__':
             "p": 2,
             "n_jobs": None
         },
-        'auto_arima': None,
-        # 'auto_arima': {
-        #     'y': y_train,
-        #     'seasonal': True,
-        #     'm': 24,
-        #     'start_p': 0,
-        #     'max_p': 2,
-        #     'start_q': 0,
-        #     'max_q': 2,
-        #     'start_P': 0,
-        #     'start_Q': 1,
-        #     'max_P': 2,
-        #     'max_Q': 2,
-        #     'stepwise': True,
-        #     'trace': True,
-        #     'parallel': True
-        # },
+        # 'auto_arima': None,
+        'auto_arima': {
+            'y': y_train,
+            'seasonal': True,
+            'm': 7,
+            'start_p': 0,
+            'max_p': 7,
+            'start_q': 0,
+            'max_q': 7,
+            'start_P': 0,
+            'start_Q': 1,
+            'max_P': 7,
+            'max_Q': 7,
+            'stepwise': True,
+            'trace': True,
+            'parallel': True
+        },
         'arima': None,
         # 'arima': {
         #     'order': (7, 0, 0),
@@ -208,7 +204,7 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Declare a Neural Network model and prepare the data to train it ##
+    ## Dmicroffot_stockare a Neural Network model and prepare the data to train it ##
     ## ------------------------------------------------------------------------------------------ ##
     # divide the data into train/test datasets
     input_vars = df_data.columns
@@ -308,17 +304,17 @@ if __name__ == '__main__':
     ## Perform gradient-based denoising method ##
     ## ------------------------------------------------------------------------------------------ ##
     x_sliding = df_data[input_vars].values
-    y_sliding = df_data[['y']]
+    y_sliding = df_data['y'].values
     df_to_denoise = SlidingWindowDataset(x_sliding, y_sliding, window_size=window_size, future=1)
 
     dlnr = DLNoiseReduction(model=model, criterion=criterion, is_ts=IS_TS)
-    dlnr.fit(df_to_denoise.copy())
+    dlnr.fit(df_to_denoise)
 
     df_denoised = df_data.copy()
     df_denoised[input_vars], old_y = dlnr.transform(
-        nrr=0.5,
+        nrr=0.05,
         nr_threshold=0.01,
-        max_epochs=50,
+        max_epochs=200,
         plot_progress=False,
         path_to_save_imgs=None,
         denoise_y=False
@@ -338,7 +334,6 @@ if __name__ == '__main__':
 
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
-    df_denoised = df_denoised.copy()
     df_denoised['y_shifted'] = df_denoised['y'].shift(-1)
     # Eliminar la última fila porque tendrá un NaN en la última columna
     df_denoised = df_denoised.dropna().reset_index(drop=True)
@@ -353,8 +348,8 @@ if __name__ == '__main__':
 
     ## Perform XAI benchmark over Denoised data ##
     ## ------------------------------------------------------------------------------------------ ##
-    # order = xai_benchmark_orig.auto_arima.order # (p, d, q)
-    # seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
+    order = xai_benchmark_orig.auto_arima.order # (p, d, q)
+    seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
     model_params = {
         'ridge': {"alpha": 1.0},
         'pls': {"n_components": 1},
@@ -385,11 +380,11 @@ if __name__ == '__main__':
         #     'trace': True,
         #     'parallel': True
         # },
-        'arima': None,
-        # 'arima': {
-        #     'order': order,
-        #     'seasonal_order': seasonal_order
-        # }
+        # 'arima': None,
+        'arima': {
+            'order': order,
+            'seasonal_order': seasonal_order
+        }
     }
 
     xai_benchmark_denoised = XAI_benchmark(

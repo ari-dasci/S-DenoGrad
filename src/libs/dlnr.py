@@ -267,6 +267,7 @@ class DLNoiseReduction():
             )
             y_predicted.requires_grad_(True)
             y_predicted.retain_grad()
+
             loss = self._criterion(
                 y_predicted,
                 y_tensor.float().to(self._device)

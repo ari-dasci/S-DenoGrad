@@ -433,15 +433,17 @@ class Trainer:
         """
         batch_x = batch_x.to(self.device, dtype=torch.float32)
         batch_y = batch_y.to(self.device, dtype=torch.float32)
+
         self.optimizer.zero_grad()
         outputs = self.model(batch_x)
-        # try:
-        #     outputs = self.model(batch_x).squeeze()
-        # except:
-        #     outputs = self.model(batch_x.view(batch_x.shape[0], 1))
+
+        if len(outputs.shape) < len(batch_y.shape):
+            outputs = outputs.unsqueeze(1)
+
         loss = self.criterion(outputs, batch_y)
         loss.backward()
         self.optimizer.step()
+
         if self.batch_scheduler is not None:
             self.batch_scheduler.step()
 
@@ -472,10 +474,9 @@ class Trainer:
         batch_y_val = batch_y_val.to(self.device, dtype=torch.float32)
 
         val_outputs = self.model(batch_x_val)
-        # try:
-        #     val_outputs = self.model(batch_x_val).squeeze()
-        # except:
-        #     val_outputs = self.model(batch_x_val.view(batch_x_val.shape[0], 1))
+        if len(val_outputs.shape) < len(batch_y_val.shape):
+            val_outputs = val_outputs.unsqueeze(1)
+
         val_loss = self.criterion(val_outputs, batch_y_val).item()
 
         return val_loss
