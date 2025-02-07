@@ -1,14 +1,14 @@
 # pylint: disable=import-error
 # pylint: disable=wrong-import-position
 """
-title: real_ETT_exp
+title: real_mcfrosfot_stock_exp
 author: José Javier Alonso Ramos
 email: jjalonso@ugr.es
 institution: DaSCI - UGR
 
 Description:
-Performs a real experiment with a ETT dataset.
-The experiment consists of generating a ETT dataset with a polinomial function and
+Performs a real experiment with a microsoft_stock dataset.
+The experiment consists of generating a microsoft_stock dataset with a polinomial function and
 adding Gaussian noise to it. Then, a neural network model is trained to predict the target
 variable. Finally, the gradients are used to reduce the noise in the data.
 """
@@ -41,9 +41,9 @@ FOLDERS = CURRENT_DIR.split(os.sep)
 TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'ETT')
-CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'ETT')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'ETT')
+DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'microsoft_stock')
+CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'microsoft_stock')
+OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'microsoft_stock')
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
@@ -55,12 +55,12 @@ FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'gradient'
+SUBFIX_NAME = 'dae'
 IS_TS = True
 
 # Local libraries
-from dataset import SlidingWindowDataset
-from models import Trainer, XAI_benchmark, LSTMModel
+from dataset import SlidingWindowDataset, TensorDataset
+from models import Trainer, XAI_benchmark, DenoisingAutoencoder
 from dlnr import DLNoiseReduction
 from utils import symmetric_mean_absolute_percentage_error
 
@@ -102,11 +102,11 @@ if __name__ == '__main__':
     df_data = pd.read_parquet(
         os.path.join(
             DATA_PATH,
-            'clean_h1.parquet'
+            'clean.parquet'
         )
     )
 
-    df_data.rename(columns={"OT": "y"}, inplace=True)
+    df_data.rename(columns={"Close": "y"}, inplace=True)
 
     # scale the data
     scaler = MinMaxScaler()
@@ -146,25 +146,25 @@ if __name__ == '__main__':
         },
         'auto_arima': None,
         # 'auto_arima': {
-        #     'y': y_train_denoised,
+        #     'y': y_train,
         #     'seasonal': True,
-        #     'm': 30,
-        #     'start_p': 5,
-        #     'max_p': 10,
+        #     'm': 7,
+        #     'start_p': 0,
+        #     'max_p': 7,
         #     'start_q': 0,
-        #     'max_q': 0,
+        #     'max_q': 7,
         #     'start_P': 0,
         #     'start_Q': 1,
-        #     'max_P': 0,
-        #     'max_Q': 1,
+        #     'max_P': 7,
+        #     'max_Q': 7,
         #     'stepwise': True,
         #     'trace': True,
         #     'parallel': True
         # },
         # 'arima': None,
         'arima': {
-            'order': (1, 1, 0),
-            'seasonal_order': (1, 0, 1, 24)
+            'order': (0, 1, 0),
+            'seasonal_order': (2, 0, 0, 7)
         }
     }
     xai_benchmark_orig = XAI_benchmark(
@@ -182,7 +182,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
     xai_benchmark_orig.save(
         path = os.path.join(CHECKPOINT_PATH, 'orig'),
@@ -204,37 +205,35 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## DETTare a Neural Network model and prepare the data to train it ##
-    ## ------------------------------------------------------------------------------------------ ##
-    # divide the data into train/test datasets
-    input_vars = df_data.columns
-    X_train_nn, X_test_nn, y_train_nn, y_test_nn = train_test_split(
-        df_data[input_vars].values, df_data['y'].values, test_size=0.2, shuffle=False
+    ## Declare a Neural Network model and prepare the data to train it ##
+    ## -------------------------------------------------------------------------------------- ##
+    train_dae, test_dae = train_test_split(
+        df_data.values, test_size=0.2, shuffle=False
+    )
+
+    ### 'y' parameter should be the same as 'x' in a normal problem where the original ###
+    ### (no noise/clean) data is not available. ###
+    ## -------------------------------------------------------------------------------------- ##
+    train_dataset = TensorDataset(
+        x=train_dae,
+        y=train_dae
+    )
+    # Transform the data into a tensor
+    val_dataset = TensorDataset(
+        x=test_dae,
+        y=test_dae
     )
 
     # Create the dataloaders
     batch_size = 64
-    window_size = 30
-    train_dataset = SlidingWindowDataset(
-        X_train_nn,
-        y_train_nn,
-        window_size=window_size,
-        future=1
-    )
-    val_dataset = SlidingWindowDataset(
-        X_test_nn,
-        y_test_nn,
-        window_size=window_size,
-        future=1
-    )
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     # Create Neural Network model
-    input_size = X_train_nn.shape[1] # Número de variables de entrada
-    hidden_size = 128  # Número de neuronas en la capa oculta
-    output_size = 1  # Predicción de una variable
-    model = LSTMModel(input_size, hidden_size, output_size).to(device)
+    model = DenoisingAutoencoder(
+        input_dim=train_dae.shape[1],
+        latent_dim=32,
+    ).to(device)
 
     # Set model parameters and create the model Trainer object
     lr = 0.001
@@ -243,7 +242,7 @@ if __name__ == '__main__':
     denoiser_checkpoint_path = os.path.join(
         CHECKPOINT_PATH,
         'orig',
-        'nn_orig.pth'
+        'dae.pth'
     )
 
     # Define the trainer
@@ -275,15 +274,14 @@ if __name__ == '__main__':
 
     ## Predict and get the metrics for de NN model ##
     ## ------------------------------------------------------------------------------------------ ##
-    # y_pred_test = model(
-    #     torch.tensor(X_test_orig).float().to(device)
-    # ).cpu().detach().numpy().reshape(-1)
-    predictions_test = trainer_basic.eval_dataloader(val_dataloader)
-    y_pred_test = np.array([y.cpu().detach().numpy() for x in predictions_test for y in x])
+    df_denoised = model(
+        torch.tensor(df_data.values).float().to(device)
+    ).cpu().detach().numpy()
+    df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
 
     # Show the metrics
-    gt_values = y_test_nn[window_size:]
-    predicted_values = y_pred_test
+    gt_values = df_data.values
+    predicted_values = df_denoised.values
     mae = mean_absolute_error(gt_values, predicted_values)
     smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
     mse = mean_squared_error(gt_values, predicted_values)
@@ -298,40 +296,11 @@ if __name__ == '__main__':
         'R2': r_squared
     }
 
-    predictions_dict['orig']['nn'] = y_pred_test
-    metrics_dict['orig']['nn'] = nn_metrics
+    predictions_dict['orig'][SUBFIX_NAME] = predicted_values
+    metrics_dict['orig'][SUBFIX_NAME] = nn_metrics
 
-    ## Perform gradient-based denoising method ##
+    ## Perform XAI benchmark over Denoised data ##
     ## ------------------------------------------------------------------------------------------ ##
-    x_sliding = df_data[input_vars].values
-    y_sliding = df_data['y'].values
-    df_to_denoise = SlidingWindowDataset(x_sliding, y_sliding, window_size=window_size, future=1)
-
-    dlnr = DLNoiseReduction(model=model, criterion=criterion, is_ts=IS_TS)
-    dlnr.fit(df_to_denoise)
-
-    df_denoised = df_data.copy()
-    df_denoised[input_vars], old_y = dlnr.transform(
-        nrr=0.05,
-        nr_threshold=0.01,
-        max_epochs=200,
-        plot_progress=False,
-        path_to_save_imgs=None,
-        denoise_y=False
-    )
-
-    # complete_dataset = SlidingWindowDataset(
-    #     df_denoised,
-    #     df_denoised['y'],
-    #     window_size=window_size,
-    #     future=1
-    # )
-    # complete_dataloader = DataLoader(complete_dataset, batch_size=batch_size, shuffle=False)
-    # y_new = trainer_basic.eval_dataloader(complete_dataloader)
-    # y_new = np.array([y.cpu().detach().numpy() for x in y_new for y in x])
-    # df_denoised = df_denoised.iloc[window_size:]
-    # df_denoised['y'] = y_new.astype(float)
-
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
     df_denoised['y_shifted'] = df_denoised['y'].shift(-1)
@@ -350,30 +319,30 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     # order = xai_benchmark_orig.auto_arima.order # (p, d, q)
     # seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
-    model_params = {
-        'ridge': {"alpha": 1.0},
-        'pls': {"n_components": 1},
-        'tree': {"max_depth": 5},
-        'svm': {"kernel": 'poly', "degree": 2},
-        'knn': {
-            "n_neighbors": 5,
-            "weights": 'uniform',
-            "algorithm": 'auto',
-            "leaf_size": 30,
-            "p": 2,
-            "n_jobs": None
-        },
-        'auto_arima': None,
-        # 'arima': None,
-        # 'arima': {
-        #     'order': order,
-        #     'seasonal_order': seasonal_order
-        # },
-        'arima': {
-            'order': (1, 1, 0),
-            'seasonal_order': (1, 0, 1, 24)
-        }
-    }
+    # model_params = {
+    #     'ridge': {"alpha": 1.0},
+    #     'pls': {"n_components": 1},
+    #     'tree': {"max_depth": 5},
+    #     'svm': {"kernel": 'poly', "degree": 2},
+    #     'knn': {
+    #         "n_neighbors": 5,
+    #         "weights": 'uniform',
+    #         "algorithm": 'auto',
+    #         "leaf_size": 30,
+    #         "p": 2,
+    #         "n_jobs": None
+    #     },
+    #     'auto_arima': None,
+    #     'arima': None,
+    #     'arima': {
+    #         'order': order,
+    #         'seasonal_order': seasonal_order
+    #     },
+    #     'arima': {
+    #         'order': (7, 0, 0),
+    #         'seasonal_order': (0, 0, 1, 30)
+    #     }
+    # }
 
     xai_benchmark_denoised = XAI_benchmark(
         is_ts = IS_TS,
@@ -396,7 +365,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. Denoised models over original data.
@@ -404,7 +374,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. orig models over denoised data.
@@ -412,7 +383,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     predictions_dict['denoised'] = {}

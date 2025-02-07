@@ -717,6 +717,11 @@ class XAI_benchmark:
         if self.knn:
             self.knn.fit(X, y)
         if self.is_ts:
+            try:
+                y = y.values
+            except:
+                pass
+
             model = ''
             if self.arima:
                 self.arima.fit(y)
@@ -731,7 +736,8 @@ class XAI_benchmark:
             print('All models fitted!')
 
 
-    def predict(self, X:np.array, y_true:np.array = None, n_periods:int = None, get_metrics:bool = False) -> dict:
+    def predict(self, X:np.array, y_true:np.array = None, n_periods:int = None,
+                rolling_forcast:bool = True, get_metrics:bool = False) -> dict:
         """
         Predict with all XAI models.
 
@@ -747,15 +753,39 @@ class XAI_benchmark:
             'decision_tree': self.decision_tree.predict(X) if self.decision_tree else None,
             'svm': self.svr.predict(X) if self.svr else None,
             'knn': self.knn.predict(X) if self.knn else None,
-            'arima': self.arima.predict(n_periods=n_periods, X=X) if n_periods and self.is_ts and self.arima else None,
-            'auto_arima': self.auto_arima.predict(n_periods=n_periods) if n_periods and self.is_ts and self.auto_arima else None
+            'arima': [],
+            'auto_arima': []
         }
+
+        # If the data is a time series and n_periods has been specified for arima models
+        if n_periods and self.is_ts:
+            # If the prediction will be step by step
+            if rolling_forcast:
+                i=0
+                while i < n_periods:
+                    if self.arima:
+                        new_pred = self.arima.predict(n_periods=1)
+                        predictions['arima'].append(new_pred[0])
+                        self.arima.update(new_pred)
+                    elif self.auto_arima:
+                        new_pred = self.auto_arima.predict(n_periods=1)
+                        predictions['auto_arima'].append(new_pred[0])
+                        self.auto_arima.update(new_pred)
+                    i+=1
+            # Or all at once
+            else:
+                if self.arima:
+                    predictions['arima'] = self.arima.predict(n_periods=n_periods)
+                elif self.auto_arima:
+                    predictions['auto_arima'] = self.arima.predict(n_periods=n_periods)
+
+
         metrics = {}
 
         if get_metrics:
             assert y_true is not None, 'y must be provided to calculate metrics.'
             for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima', 'auto_arima']:
-                if predictions.get(model) is not None:
+                if list(predictions.get(model)):
                     metrics[model] = {
                         'mse': mean_squared_error(y_true, predictions[model]),
                         'rmse': np.sqrt(mean_squared_error(y_true, predictions[model])),

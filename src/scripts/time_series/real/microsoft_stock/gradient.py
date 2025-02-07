@@ -145,27 +145,27 @@ if __name__ == '__main__':
             "n_jobs": None
         },
         # 'auto_arima': None,
-        'auto_arima': {
-            'y': y_train,
-            'seasonal': True,
-            'm': 7,
-            'start_p': 0,
-            'max_p': 7,
-            'start_q': 0,
-            'max_q': 7,
-            'start_P': 0,
-            'start_Q': 1,
-            'max_P': 7,
-            'max_Q': 7,
-            'stepwise': True,
-            'trace': True,
-            'parallel': True
-        },
-        'arima': None,
-        # 'arima': {
-        #     'order': (7, 0, 0),
-        #     'seasonal_order': (0, 0, 1, 30)
-        # }
+        # 'auto_arima': {
+        #     'y': y_train,
+        #     'seasonal': True,
+        #     'm': 7,
+        #     'start_p': 0,
+        #     'max_p': 7,
+        #     'start_q': 0,
+        #     'max_q': 7,
+        #     'start_P': 0,
+        #     'start_Q': 1,
+        #     'max_P': 7,
+        #     'max_Q': 7,
+        #     'stepwise': True,
+        #     'trace': True,
+        #     'parallel': True
+        # },
+        # 'arima': None,
+        'arima': {
+            'order': (0, 1, 0),
+            'seasonal_order': (2, 0, 0, 7)
+        }
     }
     xai_benchmark_orig = XAI_benchmark(
         is_ts = IS_TS,
@@ -348,8 +348,8 @@ if __name__ == '__main__':
 
     ## Perform XAI benchmark over Denoised data ##
     ## ------------------------------------------------------------------------------------------ ##
-    order = xai_benchmark_orig.auto_arima.order # (p, d, q)
-    seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
+    # order = xai_benchmark_orig.auto_arima.order # (p, d, q)
+    # seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
     model_params = {
         'ridge': {"alpha": 1.0},
         'pls': {"n_components": 1},
@@ -364,26 +364,14 @@ if __name__ == '__main__':
             "n_jobs": None
         },
         'auto_arima': None,
-        # 'auto_arima': {
-        #     'y': y_train_denoised,
-        #     'seasonal': True,
-        #     'm': 30,
-        #     'start_p': 5,
-        #     'max_p': 10,
-        #     'start_q': 0,
-        #     'max_q': 0,
-        #     'start_P': 0,
-        #     'start_Q': 1,
-        #     'max_P': 0,
-        #     'max_Q': 1,
-        #     'stepwise': True,
-        #     'trace': True,
-        #     'parallel': True
-        # },
         # 'arima': None,
+        # 'arima': {
+        #     'order': order,
+        #     'seasonal_order': seasonal_order
+        # },
         'arima': {
-            'order': order,
-            'seasonal_order': seasonal_order
+            'order': (0, 1, 0),
+            'seasonal_order': (2, 0, 0, 7)
         }
     }
 

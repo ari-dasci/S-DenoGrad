@@ -1,6 +1,6 @@
 #!/bin/bash
 
-JOB_NAME="WTH-grad"
+JOB_NAME="WTH-dae"
 PARTITION="dgx"
 
 cat > job_script.sh <<EOF
@@ -15,7 +15,7 @@ source /opt/anaconda/etc/profile.d/conda.sh
 conda activate /mnt/homeGPU/JJavierAR/repsol_env/
 export TFHUB_CACHE_DIR=.
 
-python /mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/WTH/gradient.py
+python /mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/WTH/dae.py
 EOF
 
 # Dar permisos de ejecución (opcional, pero buena práctica)

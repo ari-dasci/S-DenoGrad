@@ -1,7 +1,7 @@
 #!/bin/bash
 
-JOB_NAME="MS-grad"
-PARTITION="dgx2"
+JOB_NAME="MS-dae"
+PARTITION="dgx"
 
 cat > job_script.sh <<EOF
 #!/bin/bash
@@ -15,7 +15,7 @@ source /opt/anaconda/etc/profile.d/conda.sh
 conda activate /mnt/homeGPU/JJavierAR/repsol_env/
 export TFHUB_CACHE_DIR=.
 
-python /mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/microsoft_stock/gradient.py
+python /mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/microsoft_stock/dae.py
 EOF
 
 # Dar permisos de ejecución (opcional, pero buena práctica)

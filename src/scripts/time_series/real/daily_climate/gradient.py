@@ -298,7 +298,7 @@ if __name__ == '__main__':
         'R2': r_squared
     }
 
-    predictions_dict['orig']['nn'] = y_pred_test
+    predictions_dict['orig']['nn'] = predicted_values
     metrics_dict['orig']['nn'] = nn_metrics
 
     ## Perform gradient-based denoising method ##
@@ -363,28 +363,16 @@ if __name__ == '__main__':
     #         "p": 2,
     #         "n_jobs": None
     #     },
-    #     # 'auto_arima': None,
-    #     'auto_arima': {
-    #         'y': y_train_denoised,
-    #         'seasonal': True,
-    #         'm': 30,
-    #         'start_p': 5,
-    #         'max_p': 10,
-    #         'start_q': 0,
-    #         'max_q': 0,
-    #         'start_P': 0,
-    #         'start_Q': 1,
-    #         'max_P': 0,
-    #         'max_Q': 1,
-    #         'stepwise': True,
-    #         'trace': True,
-    #         'parallel': True
+    #     'auto_arima': None,
+    #     'arima': None,
+    #     'arima': {
+    #         'order': order,
+    #         'seasonal_order': seasonal_order
     #     },
-    #     'arima': None
-    #     # 'arima': {
-    #     #     'order': (7, 0, 0),
-    #     #     'seasonal_order': (0, 0, 1, 30)
-    #     # }
+    #     'arima': {
+    #         'order': (7, 0, 0),
+    #         'seasonal_order': (0, 0, 1, 30)
+    #     }
     # }
 
     xai_benchmark_denoised = XAI_benchmark(

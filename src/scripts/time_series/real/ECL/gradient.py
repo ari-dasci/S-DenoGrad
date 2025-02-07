@@ -165,11 +165,11 @@ if __name__ == '__main__':
         #     'trace': True,
         #     'parallel': True
         # },
-        'arima': None,
-        # 'arima': {
-        #     'order': (7, 0, 0),
-        #     'seasonal_order': (0, 0, 1, 30)
-        # }
+        # 'arima': None,
+        'arima': {
+            'order': (1, 1, 0),
+            'seasonal_order': (2, 0, 1, 24)
+        }
     }
     xai_benchmark_orig = XAI_benchmark(
         is_ts = IS_TS,
@@ -369,27 +369,11 @@ if __name__ == '__main__':
             "n_jobs": None
         },
         'auto_arima': None,
-        # 'auto_arima': {
-        #     'y': y_train_denoised,
-        #     'seasonal': True,
-        #     'm': 30,
-        #     'start_p': 5,
-        #     'max_p': 10,
-        #     'start_q': 0,
-        #     'max_q': 0,
-        #     'start_P': 0,
-        #     'start_Q': 1,
-        #     'max_P': 0,
-        #     'max_Q': 1,
-        #     'stepwise': True,
-        #     'trace': True,
-        #     'parallel': True
-        # },
-        'arima': None,
-        # 'arima': {
-        #     'order': order,
-        #     'seasonal_order': seasonal_order
-        # }
+        # 'arima': None,
+        'arima': {
+            'order': (1, 1, 0),
+            'seasonal_order': (2, 0, 1, 24)
+        }
     }
 
     xai_benchmark_denoised = XAI_benchmark(

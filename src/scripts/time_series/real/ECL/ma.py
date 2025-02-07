@@ -1,14 +1,14 @@
 # pylint: disable=import-error
 # pylint: disable=wrong-import-position
 """
-title: real_ETT_exp
+title: real_ECL_exp
 author: José Javier Alonso Ramos
 email: jjalonso@ugr.es
 institution: DaSCI - UGR
 
 Description:
-Performs a real experiment with a ETT dataset.
-The experiment consists of generating a ETT dataset with a polinomial function and
+Performs a real experiment with a ECL dataset.
+The experiment consists of generating a ECL dataset with a polinomial function and
 adding Gaussian noise to it. Then, a neural network model is trained to predict the target
 variable. Finally, the gradients are used to reduce the noise in the data.
 """
@@ -41,9 +41,9 @@ FOLDERS = CURRENT_DIR.split(os.sep)
 TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'ETT')
-CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'ETT')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'ETT')
+DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'ECL')
+CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'ECL')
+OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'ECL')
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
@@ -55,7 +55,7 @@ FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'gradient'
+SUBFIX_NAME = 'ma'
 IS_TS = True
 
 # Local libraries
@@ -102,11 +102,11 @@ if __name__ == '__main__':
     df_data = pd.read_parquet(
         os.path.join(
             DATA_PATH,
-            'clean_h1.parquet'
+            'clean.parquet'
         )
     )
 
-    df_data.rename(columns={"OT": "y"}, inplace=True)
+    df_data.rename(columns={"MT_320": "y"}, inplace=True)
 
     # scale the data
     scaler = MinMaxScaler()
@@ -115,6 +115,10 @@ if __name__ == '__main__':
     # assert there is no more categorical variables
     columnas_categoricas = df_data.select_dtypes(include=['object', 'category']).columns
     assert not list(columnas_categoricas)
+
+
+    df_data = df_data.iloc[-5000:].copy()
+
 
     # Desplazar la última columna hacia arriba
     df_data['y_shifted'] = df_data['y'].shift(-1)
@@ -146,17 +150,17 @@ if __name__ == '__main__':
         },
         'auto_arima': None,
         # 'auto_arima': {
-        #     'y': y_train_denoised,
+        #     'y': y_train,
         #     'seasonal': True,
-        #     'm': 30,
-        #     'start_p': 5,
-        #     'max_p': 10,
+        #     'm': 24,
+        #     'start_p': 0,
+        #     'max_p': 2,
         #     'start_q': 0,
-        #     'max_q': 0,
+        #     'max_q': 2,
         #     'start_P': 0,
         #     'start_Q': 1,
-        #     'max_P': 0,
-        #     'max_Q': 1,
+        #     'max_P': 2,
+        #     'max_Q': 2,
         #     'stepwise': True,
         #     'trace': True,
         #     'parallel': True
@@ -164,7 +168,7 @@ if __name__ == '__main__':
         # 'arima': None,
         'arima': {
             'order': (1, 1, 0),
-            'seasonal_order': (1, 0, 1, 24)
+            'seasonal_order': (2, 0, 1, 24)
         }
     }
     xai_benchmark_orig = XAI_benchmark(
@@ -204,133 +208,15 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## DETTare a Neural Network model and prepare the data to train it ##
+    ## Perform MA denoising method ##
     ## ------------------------------------------------------------------------------------------ ##
-    # divide the data into train/test datasets
-    input_vars = df_data.columns
-    X_train_nn, X_test_nn, y_train_nn, y_test_nn = train_test_split(
-        df_data[input_vars].values, df_data['y'].values, test_size=0.2, shuffle=False
+    window_size = 5
+    df_denoised = pd.DataFrame()
+    df_denoised = pd.concat(
+        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
+        axis=1
     )
-
-    # Create the dataloaders
-    batch_size = 64
-    window_size = 30
-    train_dataset = SlidingWindowDataset(
-        X_train_nn,
-        y_train_nn,
-        window_size=window_size,
-        future=1
-    )
-    val_dataset = SlidingWindowDataset(
-        X_test_nn,
-        y_test_nn,
-        window_size=window_size,
-        future=1
-    )
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-    # Create Neural Network model
-    input_size = X_train_nn.shape[1] # Número de variables de entrada
-    hidden_size = 128  # Número de neuronas en la capa oculta
-    output_size = 1  # Predicción de una variable
-    model = LSTMModel(input_size, hidden_size, output_size).to(device)
-
-    # Set model parameters and create the model Trainer object
-    lr = 0.001
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    denoiser_checkpoint_path = os.path.join(
-        CHECKPOINT_PATH,
-        'orig',
-        'nn_orig.pth'
-    )
-
-    # Define the trainer
-    trainer_basic = Trainer(
-        model=model,
-        train_generator=train_dataloader,
-        val_generator=val_dataloader,
-        device=device,
-        criterion=criterion,
-        optimizer=optimizer,
-        epoch_scheduler=None,
-        batch_scheduler=None,
-        patience=15,
-        epochs=500,
-        checkpoints_path=denoiser_checkpoint_path
-    )
-
-    ## Train the Neural Network or load its weights from a checkpoint ##
-    ## ------------------------------------------------------------------------------------------ ##
-    if os.path.exists(denoiser_checkpoint_path) and not FORCE_TRAINING_NN:
-        model.load_state_dict(torch.load(denoiser_checkpoint_path, weights_only=True))
-        if VERBOSE:
-            print(
-                'Checkpoint loaded for the neural network model from path: ',
-                denoiser_checkpoint_path
-            )
-    else:
-        model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
-
-    ## Predict and get the metrics for de NN model ##
-    ## ------------------------------------------------------------------------------------------ ##
-    # y_pred_test = model(
-    #     torch.tensor(X_test_orig).float().to(device)
-    # ).cpu().detach().numpy().reshape(-1)
-    predictions_test = trainer_basic.eval_dataloader(val_dataloader)
-    y_pred_test = np.array([y.cpu().detach().numpy() for x in predictions_test for y in x])
-
-    # Show the metrics
-    gt_values = y_test_nn[window_size:]
-    predicted_values = y_pred_test
-    mae = mean_absolute_error(gt_values, predicted_values)
-    smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
-    mse = mean_squared_error(gt_values, predicted_values)
-    rmse = np.sqrt(mse)
-    r_squared = r2_score(gt_values, predicted_values)
-
-    nn_metrics = {
-        'mse': mse,
-        'rmse': rmse,
-        'mae': mae,
-        'smape': smape,
-        'R2': r_squared
-    }
-
-    predictions_dict['orig']['nn'] = y_pred_test
-    metrics_dict['orig']['nn'] = nn_metrics
-
-    ## Perform gradient-based denoising method ##
-    ## ------------------------------------------------------------------------------------------ ##
-    x_sliding = df_data[input_vars].values
-    y_sliding = df_data['y'].values
-    df_to_denoise = SlidingWindowDataset(x_sliding, y_sliding, window_size=window_size, future=1)
-
-    dlnr = DLNoiseReduction(model=model, criterion=criterion, is_ts=IS_TS)
-    dlnr.fit(df_to_denoise)
-
-    df_denoised = df_data.copy()
-    df_denoised[input_vars], old_y = dlnr.transform(
-        nrr=0.05,
-        nr_threshold=0.01,
-        max_epochs=200,
-        plot_progress=False,
-        path_to_save_imgs=None,
-        denoise_y=False
-    )
-
-    # complete_dataset = SlidingWindowDataset(
-    #     df_denoised,
-    #     df_denoised['y'],
-    #     window_size=window_size,
-    #     future=1
-    # )
-    # complete_dataloader = DataLoader(complete_dataset, batch_size=batch_size, shuffle=False)
-    # y_new = trainer_basic.eval_dataloader(complete_dataloader)
-    # y_new = np.array([y.cpu().detach().numpy() for x in y_new for y in x])
-    # df_denoised = df_denoised.iloc[window_size:]
-    # df_denoised['y'] = y_new.astype(float)
+    df_denoised = df_denoised.copy()
 
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
@@ -348,8 +234,8 @@ if __name__ == '__main__':
 
     ## Perform XAI benchmark over Denoised data ##
     ## ------------------------------------------------------------------------------------------ ##
-    # order = xai_benchmark_orig.auto_arima.order # (p, d, q)
-    # seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
+    order = xai_benchmark_orig.auto_arima.order # (p, d, q)
+    seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
     model_params = {
         'ridge': {"alpha": 1.0},
         'pls': {"n_components": 1},
@@ -371,8 +257,9 @@ if __name__ == '__main__':
         # },
         'arima': {
             'order': (1, 1, 0),
-            'seasonal_order': (1, 0, 1, 24)
+            'seasonal_order': (2, 0, 1, 24)
         }
+    }
     }
 
     xai_benchmark_denoised = XAI_benchmark(

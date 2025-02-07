@@ -364,22 +364,6 @@ if __name__ == '__main__':
             "n_jobs": None
         },
         'auto_arima': None,
-        # 'auto_arima': {
-        #     'y': y_train_denoised,
-        #     'seasonal': True,
-        #     'm': 30,
-        #     'start_p': 5,
-        #     'max_p': 10,
-        #     'start_q': 0,
-        #     'max_q': 0,
-        #     'start_P': 0,
-        #     'start_Q': 1,
-        #     'max_P': 0,
-        #     'max_Q': 1,
-        #     'stepwise': True,
-        #     'trace': True,
-        #     'parallel': True
-        # },
         # 'arima': None,
         'arima': {
             'order': (1, 0, 0),
