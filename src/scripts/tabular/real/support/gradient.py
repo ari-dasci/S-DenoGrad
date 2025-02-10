@@ -43,7 +43,7 @@ TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
 DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'tabular', 'real', 'support')
-CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints')
+CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'real', 'support')
 OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'tabular', 'real', 'support')
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
@@ -143,7 +143,7 @@ if __name__ == '__main__':
         get_metrics=True
     )
     xai_benchmark_orig.save(
-        path = os.path.join(CHECKPOINT_PATH,'tabular','real','support', 'orig'),
+        path = os.path.join(CHECKPOINT_PATH, 'orig'),
         subfix = 'orig'
     )
 
@@ -247,9 +247,6 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr=lr)
     denoiser_checkpoint_path = os.path.join(
         CHECKPOINT_PATH,
-        'tabular',
-        'real',
-        'support',
         'orig',
         'nn_orig.pth'
     )
@@ -325,7 +322,7 @@ if __name__ == '__main__':
     )
     xai_benchmark_denoised.fit(df_denoised[input_vars].values, df_denoised['y'].values)
     xai_benchmark_denoised.save(
-        path = os.path.join(CHECKPOINT_PATH,'tabular','real','support', 'denoised'),
+        path = os.path.join(CHECKPOINT_PATH, 'denoised'),
         subfix = f'{SUBFIX_NAME}_denoised'
     )
 

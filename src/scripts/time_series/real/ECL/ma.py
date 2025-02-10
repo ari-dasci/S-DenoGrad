@@ -218,6 +218,26 @@ if __name__ == '__main__':
     )
     df_denoised = df_denoised.copy()
 
+    # Calc the metrics
+    gt_values = df_data.values
+    predicted_values = df_denoised.values
+    mae = mean_absolute_error(gt_values, predicted_values)
+    smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
+    mse = mean_squared_error(gt_values, predicted_values)
+    rmse = np.sqrt(mse)
+    r_squared = r2_score(gt_values, predicted_values)
+
+    denoised_metrics = {
+        'mse': mse,
+        'rmse': rmse,
+        'mae': mae,
+        'smape': smape,
+        'R2': r_squared
+    }
+
+    predictions_dict['orig'][SUBFIX_NAME] = predicted_values
+    metrics_dict['orig'][SUBFIX_NAME] = denoised_metrics
+
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
     df_denoised['y_shifted'] = df_denoised['y'].shift(-1)
@@ -234,8 +254,8 @@ if __name__ == '__main__':
 
     ## Perform XAI benchmark over Denoised data ##
     ## ------------------------------------------------------------------------------------------ ##
-    order = xai_benchmark_orig.auto_arima.order # (p, d, q)
-    seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
+    # order = xai_benchmark_orig.auto_arima.order # (p, d, q)
+    # seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
     model_params = {
         'ridge': {"alpha": 1.0},
         'pls': {"n_components": 1},
@@ -259,7 +279,6 @@ if __name__ == '__main__':
             'order': (1, 1, 0),
             'seasonal_order': (2, 0, 1, 24)
         }
-    }
     }
 
     xai_benchmark_denoised = XAI_benchmark(

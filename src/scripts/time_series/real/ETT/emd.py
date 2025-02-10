@@ -23,12 +23,12 @@ import random
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
 import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
+from PyEMD import EMD
 
 # Seed
 random.seed(42)
@@ -51,17 +51,15 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING_PRE_XAI = True
+FORCE_TRAINING_PRE_XAI = False
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'emd'
 IS_TS = True
 
 # Local libraries
-from dataset import SlidingWindowDataset
-from models import Trainer, XAI_benchmark, LSTMModel
-from dlnr import DLNoiseReduction
+from models import XAI_benchmark
 from utils import symmetric_mean_absolute_percentage_error
 
 # Make sure that the GPU is being used
@@ -204,14 +202,16 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Perform MA denoising method ##
+    ## Denoise the data using Empirical Mode Decomposition ##
     ## ------------------------------------------------------------------------------------------ ##
-    window_size = 5
-    df_denoised = pd.DataFrame()
-    df_denoised = pd.concat(
-        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
-        axis=1
-    )
+    # EMD decomposition
+    df_denoised = pd.DataFrame(columns=df_data.columns)
+
+    for col in df_data.columns:
+        emd = EMD()
+        imfs = emd(df_data[col].values)
+        # Reconstruction of the signal
+        df_denoised[col] = np.sum(imfs[2:], axis=0)
     df_denoised = df_denoised.copy()
 
     # Calc the metrics
@@ -233,6 +233,7 @@ if __name__ == '__main__':
 
     predictions_dict['orig'][SUBFIX_NAME] = predicted_values
     metrics_dict['orig'][SUBFIX_NAME] = denoised_metrics
+
 
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba

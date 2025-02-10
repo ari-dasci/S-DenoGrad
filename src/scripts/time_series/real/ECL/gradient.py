@@ -186,7 +186,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
     xai_benchmark_orig.save(
         path = os.path.join(CHECKPOINT_PATH, 'orig'),
@@ -397,7 +398,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. Denoised models over original data.
@@ -405,7 +407,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. orig models over denoised data.
@@ -413,7 +416,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     predictions_dict['denoised'] = {}

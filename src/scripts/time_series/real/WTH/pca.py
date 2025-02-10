@@ -1,14 +1,14 @@
 # pylint: disable=import-error
 # pylint: disable=wrong-import-position
 """
-title: real_ETT_exp
+title: real_mcfrosfot_stock_exp
 author: José Javier Alonso Ramos
 email: jjalonso@ugr.es
 institution: DaSCI - UGR
 
 Description:
-Performs a real experiment with a ETT dataset.
-The experiment consists of generating a ETT dataset with a polinomial function and
+Performs a real experiment with a WTH dataset.
+The experiment consists of generating a WTH dataset with a polinomial function and
 adding Gaussian noise to it. Then, a neural network model is trained to predict the target
 variable. Finally, the gradients are used to reduce the noise in the data.
 """
@@ -29,6 +29,7 @@ from scipy.stats import entropy
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+from sklearn.decomposition import PCA
 
 # Seed
 random.seed(42)
@@ -41,9 +42,9 @@ FOLDERS = CURRENT_DIR.split(os.sep)
 TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'ETT')
-CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'ETT')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'ETT')
+DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'WTH')
+CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'WTH')
+OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'WTH')
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
@@ -55,7 +56,7 @@ FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'pca'
 IS_TS = True
 
 # Local libraries
@@ -102,11 +103,11 @@ if __name__ == '__main__':
     df_data = pd.read_parquet(
         os.path.join(
             DATA_PATH,
-            'clean_h1.parquet'
+            'clean.parquet'
         )
     )
 
-    df_data.rename(columns={"OT": "y"}, inplace=True)
+    df_data.rename(columns={"Visibility": "y"}, inplace=True)
 
     # scale the data
     scaler = MinMaxScaler()
@@ -148,14 +149,14 @@ if __name__ == '__main__':
         # 'auto_arima': {
         #     'y': y_train,
         #     'seasonal': True,
-        #     'm': 30,
-        #     'start_p': 5,
-        #     'max_p': 10,
+        #     'm': 24,
+        #     'start_p': 0,
+        #     'max_p': 1,
         #     'start_q': 0,
-        #     'max_q': 0,
+        #     'max_q': 1,
         #     'start_P': 0,
         #     'start_Q': 1,
-        #     'max_P': 0,
+        #     'max_P': 1,
         #     'max_Q': 1,
         #     'stepwise': True,
         #     'trace': True,
@@ -163,8 +164,8 @@ if __name__ == '__main__':
         # },
         # 'arima': None,
         'arima': {
-            'order': (1, 1, 0),
-            'seasonal_order': (1, 0, 1, 24)
+            'order': (1, 0, 0),
+            'seasonal_order': (0, 0, 0, 24)
         }
     }
     xai_benchmark_orig = XAI_benchmark(
@@ -204,14 +205,21 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Perform MA denoising method ##
+    ## Denoise the data using Principal Components Analysis ##
     ## ------------------------------------------------------------------------------------------ ##
-    window_size = 5
-    df_denoised = pd.DataFrame()
-    df_denoised = pd.concat(
-        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
-        axis=1
-    )
+    pca = PCA()
+    pca.fit(df_data)
+
+    # Select principal components with sufficient variance
+    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+    # 95% threshold for explained variance
+    n_components = np.argmax(cumulative_variance >= 0.95) + 1
+
+    # Reduce dimensionality and reconstruct the signal
+    pca_denoising = PCA(n_components=n_components)
+    data_reduced = pca_denoising.fit_transform(df_data)
+    df_denoised = pca_denoising.inverse_transform(data_reduced)
+    df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
     df_denoised = df_denoised.copy()
 
     # Calc the metrics
@@ -267,13 +275,9 @@ if __name__ == '__main__':
         },
         'auto_arima': None,
         # 'arima': None,
-        # 'arima': {
-        #     'order': order,
-        #     'seasonal_order': seasonal_order
-        # },
         'arima': {
-            'order': (1, 1, 0),
-            'seasonal_order': (1, 0, 1, 24)
+            'order': (1, 0, 0),
+            'seasonal_order': (0, 0, 0, 24)
         }
     }
 

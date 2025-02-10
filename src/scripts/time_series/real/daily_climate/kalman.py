@@ -1,14 +1,14 @@
 # pylint: disable=import-error
 # pylint: disable=wrong-import-position
 """
-title: real_ETT_exp
+title: real_daily_climate_exp
 author: José Javier Alonso Ramos
 email: jjalonso@ugr.es
 institution: DaSCI - UGR
 
 Description:
-Performs a real experiment with a ETT dataset.
-The experiment consists of generating a ETT dataset with a polinomial function and
+Performs a real experiment with a daily_climate dataset.
+The experiment consists of generating a daily_climate dataset with a polinomial function and
 adding Gaussian noise to it. Then, a neural network model is trained to predict the target
 variable. Finally, the gradients are used to reduce the noise in the data.
 """
@@ -41,9 +41,9 @@ FOLDERS = CURRENT_DIR.split(os.sep)
 TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'ETT')
-CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'ETT')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'ETT')
+DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'time_series', 'real', 'daily_climate')
+CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real', 'daily_climate')
+OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'daily_climate')
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
@@ -55,7 +55,7 @@ FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'kalman'
 IS_TS = True
 
 # Local libraries
@@ -102,11 +102,11 @@ if __name__ == '__main__':
     df_data = pd.read_parquet(
         os.path.join(
             DATA_PATH,
-            'clean_h1.parquet'
+            'clean.parquet'
         )
     )
 
-    df_data.rename(columns={"OT": "y"}, inplace=True)
+    df_data.rename(columns={"meantemp": "y"}, inplace=True)
 
     # scale the data
     scaler = MinMaxScaler()
@@ -161,10 +161,10 @@ if __name__ == '__main__':
         #     'trace': True,
         #     'parallel': True
         # },
-        # 'arima': None,
+        # 'arima': None
         'arima': {
-            'order': (1, 1, 0),
-            'seasonal_order': (1, 0, 1, 24)
+            'order': (7, 0, 0),
+            'seasonal_order': (0, 0, 1, 30)
         }
     }
     xai_benchmark_orig = XAI_benchmark(
@@ -182,7 +182,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
     xai_benchmark_orig.save(
         path = os.path.join(CHECKPOINT_PATH, 'orig'),
@@ -204,14 +205,32 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Perform MA denoising method ##
+    ## Denoise the data using Kalman Filter ##
     ## ------------------------------------------------------------------------------------------ ##
-    window_size = 5
-    df_denoised = pd.DataFrame()
-    df_denoised = pd.concat(
-        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
-        axis=1
-    )
+    filtered_signal = []
+    # Inicialización del Filtro de Kalman
+    F = 1  # Matriz de transición (1D, sin dinámica compleja)
+    H = 1  # Matriz de observación
+    Q = 0.01  # Varianza del ruido del proceso
+    R = 0.01  # Varianza del ruido de medición
+    x = 0  # Estado inicial
+    P = 1  # Varianza inicial
+
+    # Filtro de Kalman
+    for z in df_data.values:
+        # Predicción
+        x_pred = F * x
+        P_pred = F * P * F + Q
+
+        # Actualización
+        K = P_pred * H / (H * P_pred * H + R)  # Ganancia de Kalman
+        x = x_pred + K * (z - H * x_pred)
+        P = (1 - K * H) * P_pred
+
+        # Guardar el estado filtrado
+        filtered_signal.append(x)
+
+    df_denoised = pd.DataFrame(filtered_signal, columns = df_data.columns)
     df_denoised = df_denoised.copy()
 
     # Calc the metrics
@@ -252,30 +271,30 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     # order = xai_benchmark_orig.auto_arima.order # (p, d, q)
     # seasonal_order = xai_benchmark_orig.auto_arima.seasonal_order # (P, D, Q, m)
-    model_params = {
-        'ridge': {"alpha": 1.0},
-        'pls': {"n_components": 1},
-        'tree': {"max_depth": 5},
-        'svm': {"kernel": 'poly', "degree": 2},
-        'knn': {
-            "n_neighbors": 5,
-            "weights": 'uniform',
-            "algorithm": 'auto',
-            "leaf_size": 30,
-            "p": 2,
-            "n_jobs": None
-        },
-        'auto_arima': None,
-        # 'arima': None,
-        # 'arima': {
-        #     'order': order,
-        #     'seasonal_order': seasonal_order
-        # },
-        'arima': {
-            'order': (1, 1, 0),
-            'seasonal_order': (1, 0, 1, 24)
-        }
-    }
+    # model_params = {
+    #     'ridge': {"alpha": 1.0},
+    #     'pls': {"n_components": 1},
+    #     'tree': {"max_depth": 5},
+    #     'svm': {"kernel": 'poly', "degree": 2},
+    #     'knn': {
+    #         "n_neighbors": 5,
+    #         "weights": 'uniform',
+    #         "algorithm": 'auto',
+    #         "leaf_size": 30,
+    #         "p": 2,
+    #         "n_jobs": None
+    #     },
+    #     'auto_arima': None,
+    #     'arima': None,
+    #     'arima': {
+    #         'order': order,
+    #         'seasonal_order': seasonal_order
+    #     },
+    #     arima': {
+    #         'order': (7, 0, 0),
+    #         'seasonal_order': (0, 0, 1, 30)
+    #     }
+    # }
 
     xai_benchmark_denoised = XAI_benchmark(
         is_ts = IS_TS,
@@ -298,7 +317,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. Denoised models over original data.
@@ -306,7 +326,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. orig models over denoised data.
@@ -314,7 +335,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     predictions_dict['denoised'] = {}

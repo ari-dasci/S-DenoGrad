@@ -29,6 +29,7 @@ from scipy.stats import entropy
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+from sklearn.decomposition import PCA
 
 # Seed
 random.seed(42)
@@ -55,7 +56,7 @@ FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'pca'
 IS_TS = True
 
 # Local libraries
@@ -204,14 +205,21 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Perform MA denoising method ##
+    ## Denoise the data using Principal Components Analysis ##
     ## ------------------------------------------------------------------------------------------ ##
-    window_size = 5
-    df_denoised = pd.DataFrame()
-    df_denoised = pd.concat(
-        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
-        axis=1
-    )
+    pca = PCA()
+    pca.fit(df_data)
+
+    # Select principal components with sufficient variance
+    cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
+    # 95% threshold for explained variance
+    n_components = np.argmax(cumulative_variance >= 0.95) + 1
+
+    # Reduce dimensionality and reconstruct the signal
+    pca_denoising = PCA(n_components=n_components)
+    data_reduced = pca_denoising.fit_transform(df_data)
+    df_denoised = pca_denoising.inverse_transform(data_reduced)
+    df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
     df_denoised = df_denoised.copy()
 
     # Calc the metrics

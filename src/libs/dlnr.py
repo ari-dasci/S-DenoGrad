@@ -352,7 +352,10 @@ class DLNoiseReduction():
         """
         # Accelerate the runtime by finding the best cuda configuration
         torch.backends.cudnn.benchmark = True
-        self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
+        try:
+            self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
+        except:
+            pass
         self._model.train() # RNN backward allowed.
         epoch = 0
         apply_gradient = [True, True]

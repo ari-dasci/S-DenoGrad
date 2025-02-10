@@ -29,6 +29,8 @@ from scipy.stats import entropy
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+from scipy.stats import entropy
+import pywt
 
 # Seed
 random.seed(42)
@@ -55,7 +57,7 @@ FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'wave'
 IS_TS = True
 
 # Local libraries
@@ -204,14 +206,24 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Perform MA denoising method ##
+    ## Denoise the data using Wavelet Transform decomposition ##
     ## ------------------------------------------------------------------------------------------ ##
-    window_size = 5
-    df_denoised = pd.DataFrame()
-    df_denoised = pd.concat(
-        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
-        axis=1
-    )
+    # Configuración
+    wavelet = 'db4'  # Wavelet Daubechies 4
+    df_denoised = pd.DataFrame(columns=df_data.columns)
+    for col in df_data.columns:
+        # Decompose the signal
+        coeffs = pywt.wavedec(df_data[col], wavelet, mode='smooth')
+
+        # Delete the coefficients below a threshold
+        ## Sigma is not supposed to be known, but we can estimate it
+        sigma_for_wavelet = np.median(np.abs(coeffs[-1])) / 0.6745
+        ## Define threshold by the universal Donoho rule
+        threshold = sigma_for_wavelet * np.sqrt(2 * np.log(len(df_data[col])))
+        coeffs_denoised = [pywt.threshold(c, value=threshold, mode='soft') for c in coeffs]
+
+        # Recompose the signal with the last coefficients
+        df_denoised[col] = pywt.waverec(coeffs_denoised, wavelet)[:len(df_data[col])]
     df_denoised = df_denoised.copy()
 
     # Calc the metrics

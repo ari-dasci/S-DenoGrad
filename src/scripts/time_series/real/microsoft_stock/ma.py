@@ -214,6 +214,26 @@ if __name__ == '__main__':
     )
     df_denoised = df_denoised.copy()
 
+    # Calc the metrics
+    gt_values = df_data.values
+    predicted_values = df_denoised.values
+    mae = mean_absolute_error(gt_values, predicted_values)
+    smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
+    mse = mean_squared_error(gt_values, predicted_values)
+    rmse = np.sqrt(mse)
+    r_squared = r2_score(gt_values, predicted_values)
+
+    denoised_metrics = {
+        'mse': mse,
+        'rmse': rmse,
+        'mae': mae,
+        'smape': smape,
+        'R2': r_squared
+    }
+
+    predictions_dict['orig'][SUBFIX_NAME] = predicted_values
+    metrics_dict['orig'][SUBFIX_NAME] = denoised_metrics
+
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
     df_denoised['y_shifted'] = df_denoised['y'].shift(-1)

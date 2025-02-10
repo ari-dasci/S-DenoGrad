@@ -55,7 +55,7 @@ FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'kalman'
 IS_TS = True
 
 # Local libraries
@@ -182,7 +182,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
     xai_benchmark_orig.save(
         path = os.path.join(CHECKPOINT_PATH, 'orig'),
@@ -204,14 +205,32 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Perform MA denoising method ##
+    ## Denoise the data using Kalman Filter ##
     ## ------------------------------------------------------------------------------------------ ##
-    window_size = 5
-    df_denoised = pd.DataFrame()
-    df_denoised = pd.concat(
-        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
-        axis=1
-    )
+    filtered_signal = []
+    # Inicialización del Filtro de Kalman
+    F = 1  # Matriz de transición (1D, sin dinámica compleja)
+    H = 1  # Matriz de observación
+    Q = 0.01  # Varianza del ruido del proceso
+    R = 0.01  # Varianza del ruido de medición
+    x = 0  # Estado inicial
+    P = 1  # Varianza inicial
+
+    # Filtro de Kalman
+    for z in df_data.values:
+        # Predicción
+        x_pred = F * x
+        P_pred = F * P * F + Q
+
+        # Actualización
+        K = P_pred * H / (H * P_pred * H + R)  # Ganancia de Kalman
+        x = x_pred + K * (z - H * x_pred)
+        P = (1 - K * H) * P_pred
+
+        # Guardar el estado filtrado
+        filtered_signal.append(x)
+
+    df_denoised = pd.DataFrame(filtered_signal, columns = df_data.columns)
     df_denoised = df_denoised.copy()
 
     # Calc the metrics
@@ -298,7 +317,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. Denoised models over original data.
@@ -306,7 +326,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. orig models over denoised data.
@@ -314,7 +335,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     predictions_dict['denoised'] = {}

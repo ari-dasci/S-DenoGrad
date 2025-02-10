@@ -51,16 +51,16 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING_PRE_XAI = True
+FORCE_TRAINING_PRE_XAI = False
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'resnet'
 IS_TS = True
 
 # Local libraries
-from dataset import SlidingWindowDataset
-from models import Trainer, XAI_benchmark, LSTMModel
+from dataset import TensorDataset
+from models import Trainer, XAI_benchmark, DenseResNetDenoising
 from dlnr import DLNoiseReduction
 from utils import symmetric_mean_absolute_percentage_error
 
@@ -146,7 +146,7 @@ if __name__ == '__main__':
         },
         'auto_arima': None,
         # 'auto_arima': {
-        #     'y': y_train,
+        #     'y': y_train_denoised,
         #     'seasonal': True,
         #     'm': 30,
         #     'start_p': 5,
@@ -182,7 +182,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
     xai_benchmark_orig.save(
         path = os.path.join(CHECKPOINT_PATH, 'orig'),
@@ -204,17 +205,84 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Perform MA denoising method ##
+    ## Declare a Neural Network model and prepare the data to train it ##
     ## ------------------------------------------------------------------------------------------ ##
-    window_size = 5
-    df_denoised = pd.DataFrame()
-    df_denoised = pd.concat(
-        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
-        axis=1
+    # divide the data into train/test datasets
+    input_vars = df_data.columns
+    train_resnet, test_resnet = train_test_split(
+        df_data.values, test_size=0.2, shuffle=False
     )
+
+    # Create the dataloaders
+    train_dataset = TensorDataset(
+        x=train_resnet,
+        y=train_resnet
+    )
+    # Transform the data into a tensor
+    val_dataset = TensorDataset(
+        x=test_resnet,
+        y=test_resnet
+    )
+
+    # Create the dataloaders
+    batch_size = 64
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    # Create Neural Network model
+    input_size = train_resnet.shape[1] # Número de variables de entrada
+    hidden_size = 128  # Número de neuronas en la capa oculta
+    model = DenseResNetDenoising(
+        input_dim=input_size,
+        hidden_dim=hidden_size,
+    ).to(device)
+
+    # Set model parameters and create the model Trainer object
+    lr = 0.001
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    denoiser_checkpoint_path = os.path.join(
+        CHECKPOINT_PATH,
+        'orig',
+        'resnet_orig.pth'
+    )
+
+    # Define the trainer
+    trainer_basic = Trainer(
+        model=model,
+        train_generator=train_dataloader,
+        val_generator=val_dataloader,
+        device=device,
+        criterion=criterion,
+        optimizer=optimizer,
+        epoch_scheduler=None,
+        batch_scheduler=None,
+        patience=15,
+        epochs=500,
+        checkpoints_path=denoiser_checkpoint_path
+    )
+
+    ## Train the Neural Network or load its weights from a checkpoint ##
+    ## ------------------------------------------------------------------------------------------ ##
+    if os.path.exists(denoiser_checkpoint_path) and not FORCE_TRAINING_NN:
+        model.load_state_dict(torch.load(denoiser_checkpoint_path, weights_only=True))
+        if VERBOSE:
+            print(
+                'Checkpoint loaded for the neural network model from path: ',
+                denoiser_checkpoint_path
+            )
+    else:
+        model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
+
+    ## Predict and get the metrics for de NN model ##
+    ## ------------------------------------------------------------------------------------------ ##
+    df_denoised = model(
+        torch.tensor(df_data.values).float().to(device)
+    ).cpu().detach().numpy()
+    df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
     df_denoised = df_denoised.copy()
 
-    # Calc the metrics
+    # Show the metrics
     gt_values = df_data.values
     predicted_values = df_denoised.values
     mae = mean_absolute_error(gt_values, predicted_values)
@@ -223,7 +291,7 @@ if __name__ == '__main__':
     rmse = np.sqrt(mse)
     r_squared = r2_score(gt_values, predicted_values)
 
-    denoised_metrics = {
+    nn_metrics = {
         'mse': mse,
         'rmse': rmse,
         'mae': mae,
@@ -232,7 +300,7 @@ if __name__ == '__main__':
     }
 
     predictions_dict['orig'][SUBFIX_NAME] = predicted_values
-    metrics_dict['orig'][SUBFIX_NAME] = denoised_metrics
+    metrics_dict['orig'][SUBFIX_NAME] = nn_metrics
 
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
@@ -298,7 +366,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. Denoised models over original data.
@@ -306,7 +375,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. orig models over denoised data.
@@ -314,7 +384,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     predictions_dict['denoised'] = {}

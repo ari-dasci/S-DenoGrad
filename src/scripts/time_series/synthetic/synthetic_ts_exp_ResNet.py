@@ -58,7 +58,7 @@ SUBFIX_NAME = 'ResNet'
 # Local libraries
 from utils import add_gaussian_noise
 from dataset import TensorDataset
-from models import Trainer, XAI_benchmark
+from models import Trainer, XAI_benchmark, DenseResNetDenoising
 
 # Make sure that the GPU is being used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -99,37 +99,6 @@ def dictionary_arrays_to_list(array_d:dict):
         return float(array_d)
     else:
         return array_d
-
-
-class DenseResNetDenoising(nn.Module):
-    """
-    Dense Residual Network module.
-
-    Args:
-        nn (Class): Pytorch neural network class.
-    """
-    def __init__(self, input_dim, hidden_dim=64):
-        super(DenseResNetDenoising, self).__init__()
-        self.layer1 = nn.Linear(input_dim, hidden_dim)
-        self.layer2 = nn.Linear(hidden_dim, hidden_dim)
-        self.layer3 = nn.Linear(hidden_dim, input_dim)
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        """
-        Default method to call with a class object.
-
-        Args:
-            x (np.array|tensor): array or tensor with the input data.
-
-        Returns:
-            tensor: cleaned input data.
-        """
-        identity = x
-        out = self.relu(self.layer1(x))
-        out = self.relu(self.layer2(out))
-        out = self.layer3(out)
-        return identity - out
 
 
 # Main #
