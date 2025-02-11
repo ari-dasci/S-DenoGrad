@@ -837,11 +837,11 @@ class XAI_benchmark:
             dictionary: dictionary with all the models predictions.
         """
         predictions = {
-            'ridge': self.ridge.predict(X) if self.ridge else None,
-            'pls': self.pls.predict(X) if self.pls else None,
-            'decision_tree': self.decision_tree.predict(X) if self.decision_tree else None,
-            'svm': self.svr.predict(X) if self.svr else None,
-            'knn': self.knn.predict(X) if self.knn else None,
+            'ridge': self.ridge.predict(X) if self.ridge else [],
+            'pls': self.pls.predict(X) if self.pls else [],
+            'decision_tree': self.decision_tree.predict(X) if self.decision_tree else [],
+            'svm': self.svr.predict(X) if self.svr else [],
+            'knn': self.knn.predict(X) if self.knn else [],
             'arima': [],
             'auto_arima': []
         }

@@ -119,7 +119,7 @@ if __name__ == '__main__':
         'ridge': {"alpha": 1.0},
         'pls': {"n_components": 1},
         'tree': {"max_depth": 5},
-        'svm': {"kernel": 'poly', "degree": 2},
+        'svm': None,
         'knn': {
             "n_neighbors": 5,
             "weights": 'uniform',
@@ -173,8 +173,8 @@ if __name__ == '__main__':
     df_denoised = df_denoised.copy()
 
     # Show the metrics
-    gt_values = y_test_orig
-    predicted_values = y_pred_test
+    gt_values = df_data.values
+    predicted_values = df_denoised.values
     mae = mean_absolute_error(gt_values, predicted_values)
     mape = mean_absolute_percentage_error(gt_values, predicted_values)
     mse = mean_squared_error(gt_values, predicted_values)

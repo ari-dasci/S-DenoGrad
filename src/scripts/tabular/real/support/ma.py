@@ -43,7 +43,7 @@ TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
 DATA_PATH = os.path.join(CURRENT_DIR, 'data', 'tabular', 'real', 'support')
-CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'real', 'support')
+CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'tabular', 'real', 'support')
 OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'tabular', 'real', 'support')
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
@@ -119,7 +119,7 @@ if __name__ == '__main__':
         'ridge': {"alpha": 1.0},
         'pls': {"n_components": 1},
         'tree': {"max_depth": 5},
-        'svm': {"kernel": 'poly', "degree": 2},
+        'svm': None,
         'knn': {
             "n_neighbors": 5,
             "weights": 'uniform',
