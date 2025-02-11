@@ -229,7 +229,8 @@ if __name__ == '__main__':
 
             # Delete the coefficients below a threshold
             ## Sigma is not supposed to be known, but we can estimate it
-            sigma_for_wavelet = np.median(np.abs(coeffs[-1])) / 0.6745
+            epsilon = 1e-10
+            sigma_for_wavelet = (np.median(np.abs(coeffs[-1])) + epsilon) / 0.6745
             ## Define threshold by the universal Donoho rule
             threshold = sigma_for_wavelet * np.sqrt(2 * np.log(len(df_noisy[col])))
             coeffs_denoised = [pywt.threshold(c, value=threshold, mode='soft') for c in coeffs]

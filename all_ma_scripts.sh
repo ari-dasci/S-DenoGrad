@@ -1,14 +1,14 @@
 #!/bin/bash
 
-JOB_NAME="ma"
-PARTITION="dgx"
+JOB_NAME="wave"
+PARTITION=["dgx", "dgx2"]
 
 SCRIPTS=(
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/house_prices/ma.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/lattice_physics/ma.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/parkinson/ma.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/ma.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/support/ma.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/house_prices/wavelet.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/lattice_physics/wavelet.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/parkinson/wavelet.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/wavelet.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/support/wavelet.py"
 )
 
 for SCRIPT in "${SCRIPTS[@]}"; do
