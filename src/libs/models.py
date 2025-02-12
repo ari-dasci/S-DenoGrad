@@ -874,7 +874,7 @@ class XAI_benchmark:
         if get_metrics:
             assert y_true is not None, 'y must be provided to calculate metrics.'
             for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima', 'auto_arima']:
-                if list(predictions.get(model)):
+                if list(predictions[model]):
                     metrics[model] = {
                         'mse': mean_squared_error(y_true, predictions[model]),
                         'rmse': np.sqrt(mean_squared_error(y_true, predictions[model])),

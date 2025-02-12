@@ -52,13 +52,13 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING = True
+FORCE_TRAINING = False
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'gradient'
+SUBFIX_NAME = 'resnet'
 
 # Local libraries
 from dataset import TensorDataset
-from models import Trainer, XAI_benchmark, GridFullyDenseNN
+from models import Trainer, XAI_benchmark, DenseResNetDenoising
 from dlnr import DLNoiseReduction
 
 # Make sure that the GPU is being used
@@ -109,8 +109,8 @@ if __name__ == '__main__':
     columnas_categoricas = df_data.select_dtypes(include=['object', 'category']).columns
     assert not list(columnas_categoricas)
 
-    input_vars = list(set(df_data.columns) - set(['y']))
     # divide the data into train/test datasets
+    input_vars = list(set(df_data.columns) - set(['y']))
     X_train, X_test, y_train, y_test = train_test_split(
         df_data[input_vars].values, df_data['y'].values, test_size=0.2, random_state=42
     )
@@ -165,15 +165,22 @@ if __name__ == '__main__':
     )
 
     ## Declare a Neural Network model and prepare the data to train it ##
-    ## -------------------------------------------------------------------------------------- ##
+    ## ------------------------------------------------------------------------------------------ ##
+    train_nn, test_nn = train_test_split(
+        df_data.values, test_size=0.2, random_state=42
+    )
+
+    ### 'y' parameter should be the same as 'x' in a normal problem where the original ###
+    ### (no noise/clean) data is not available. Here, the original data is used. ###
+    ## ------------------------------------------------------------------------------------------ ##
     train_dataset = TensorDataset(
-        x=X_train_orig,
-        y=y_train_orig.reshape(-1,1)
+        x=train_nn,
+        y=train_nn
     )
     # Transform the data into a tensor
     val_dataset = TensorDataset(
-        x=X_test_orig,
-        y=y_test_orig.reshape(-1,1)
+        x=test_nn,
+        y=test_nn
     )
 
     # Create the dataloaders
@@ -182,73 +189,19 @@ if __name__ == '__main__':
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     # Create Neural Network model
-    model = GridFullyDenseNN(
-        n_layers=7,
-        hidden_layers=[
-            (X_train_orig.shape[1], 64),
-            (64, 256),
-            (256, 1024),
-            (1024, 1024),
-            (1024, 512),
-            (512, 128),
-            (128, 1),
-        ],
-        dropout_layers=[
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-        ],
-        activation_func_layers=[
-            nn.ReLU(),
-            nn.ReLU(),
-            nn.ReLU(),
-            nn.ReLU(),
-            nn.ReLU(),
-            nn.ReLU(),
-            nn.Identity(),
-        ],
-        want_dropout=[
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-            False,
-        ],
-        want_linear=[
-            True,
-            True,
-            True,
-            True,
-            True,
-            True,
-            True,
-        ],
-        want_activation=[
-            True,
-            True,
-            True,
-            True,
-            True,
-            True,
-            True,
-        ],
-    )
-    model.to(device)
+    model = DenseResNetDenoising(
+        input_dim=train_nn.shape[1],
+        hidden_dim=64,
+    ).to(device)
 
     # Set model parameters and create the model Trainer object
     lr = 0.001
-    criterion = nn.MSELoss()
+    criterion = nn.L1Loss() # nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     denoiser_checkpoint_path = os.path.join(
         CHECKPOINT_PATH,
         'orig',
-        'nn_orig.pth'
+        f'{SUBFIX_NAME}.pth'
     )
 
     # Define the trainer
@@ -270,18 +223,25 @@ if __name__ == '__main__':
     ## -------------------------------------------------------------------------------------- ##
     if os.path.exists(denoiser_checkpoint_path) and not FORCE_TRAINING:
         model.load_state_dict(torch.load(denoiser_checkpoint_path))
+        if VERBOSE:
+            print(
+                'Checkpoint loaded for the neural network model from path: ',
+                denoiser_checkpoint_path
+            )
     else:
         model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
 
     ## Predict and get the metrics for de NN model ##
-    ## -------------------------------------------------------------------------------------- ##
-    y_pred_test = model(
-        torch.tensor(X_test_orig).float().to(device)
-    ).cpu().detach().numpy().reshape(-1)
+    ## ------------------------------------------------------------------------------------------ ##
+    df_denoised = model(
+        torch.tensor(df_data.values).float().to(device)
+    ).cpu().detach().numpy()
+    df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
+    df_denoised = df_denoised.copy()
 
     # Show the metrics
-    gt_values = y_test_orig
-    predicted_values = y_pred_test
+    gt_values = df_data.values
+    predicted_values = df_denoised.values
     mae = mean_absolute_error(gt_values, predicted_values)
     mape = mean_absolute_percentage_error(gt_values, predicted_values)
     mse = mean_squared_error(gt_values, predicted_values)
@@ -296,21 +256,9 @@ if __name__ == '__main__':
         'R2': r_squared
     }
 
-    predictions_dict['orig']['nn'] = y_pred_test
-    metrics_dict['orig']['nn'] = nn_metrics
+    predictions_dict['orig'][SUBFIX_NAME] = predicted_values
+    metrics_dict['orig'][SUBFIX_NAME] = nn_metrics
 
-    ## Perform gradient-based denoising method ##
-    ## -------------------------------------------------------------------------------------- ##
-    df_denoised = df_data.copy()
-    dlnr = DLNoiseReduction(model=model, criterion=criterion)
-    dlnr.fit(df_data[input_vars].values, df_data['y'].values.reshape(-1, 1))
-    df_denoised[input_vars], df_denoised['y'] = dlnr.transform(
-        nrr=0.05,
-        nr_threshold=0.01,
-        max_epochs=200,
-        plot_progress=False,
-        path_to_save_imgs=None
-    )
     denoised_corr = df_denoised.corr()
 
     ## Perform XAI benchmark over Denoised data ##

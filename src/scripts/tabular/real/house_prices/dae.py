@@ -58,7 +58,7 @@ SUBFIX_NAME = 'dae'
 
 # Local libraries
 from dataset import TensorDataset
-from models import Trainer, XAI_benchmark, GridFullyDenseNN
+from models import Trainer, XAI_benchmark, DenoisingAutoencoder
 from dlnr import DLNoiseReduction
 
 # Make sure that the GPU is being used
@@ -186,7 +186,7 @@ if __name__ == '__main__':
     # Create the dataloaders
     batch_size = 64
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     # Create Neural Network model
     model = DenoisingAutoencoder(
@@ -200,6 +200,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr=lr)
     denoiser_checkpoint_path = os.path.join(
         CHECKPOINT_PATH,
+        'orig',
         f'{SUBFIX_NAME}.pth'
     )
 
@@ -236,6 +237,7 @@ if __name__ == '__main__':
         torch.tensor(df_data.values).float().to(device)
     ).cpu().detach().numpy()
     df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
+    df_denoised = df_denoised.copy()
 
     # Show the metrics
     gt_values = df_data.values
@@ -257,18 +259,6 @@ if __name__ == '__main__':
     predictions_dict['orig'][SUBFIX_NAME] = predicted_values
     metrics_dict['orig'][SUBFIX_NAME] = nn_metrics
 
-    ## Perform gradient-based denoising method ##
-    ## -------------------------------------------------------------------------------------- ##
-    df_denoised = df_data.copy()
-    dlnr = DLNoiseReduction(model=model, criterion=criterion)
-    dlnr.fit(df_data[input_vars].values, df_data['y'].values.reshape(-1, 1))
-    df_denoised[input_vars], df_denoised['y'] = dlnr.transform(
-        nrr=0.05,
-        nr_threshold=0.01,
-        max_epochs=200,
-        plot_progress=False,
-        path_to_save_imgs=None
-    )
     denoised_corr = df_denoised.corr()
 
     ## Perform XAI benchmark over Denoised data ##

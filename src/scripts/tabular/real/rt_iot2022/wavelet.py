@@ -55,7 +55,7 @@ VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
 FORCE_TRAINING = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'wave'
 
 # Local libraries
 from models import XAI_benchmark
