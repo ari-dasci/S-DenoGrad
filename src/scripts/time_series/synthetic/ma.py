@@ -25,12 +25,13 @@ import pandas as pd
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from sklearn.model_selection import train_test_split
-from sklearn.decomposition import PCA
 from scipy.stats import entropy
+import torch
 
 # Seed
 random.seed(42)
 np.random.seed(42)
+torch.manual_seed(42)
 
 # Global variables
 CURRENT_DIR = os.getcwd()
@@ -50,11 +51,12 @@ VERBOSE = False
 # Even if there is a checkpoint, the model is retrained.
 FORCE_TRAINING = False
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'pca'
+SUBFIX_NAME = 'ma_random'
 
 # Local libraries
 from utils import add_gaussian_noise
 from models import XAI_benchmark
+
 
 # Functions definition #
 # ------------------------------------------------------------------------------------------------ #
@@ -124,6 +126,11 @@ if __name__ == '__main__':
             "p": 2,
             "n_jobs": None
         },
+        'arima': {
+            'order': (1, 1, 0),
+            'seasonal_order': (4, 0, 5, 12)
+        },
+        'auto_arima': None
     }
     xai_benchmark_orig = XAI_benchmark(
         is_ts = False,
@@ -216,23 +223,16 @@ if __name__ == '__main__':
         predictions_dict[sigma] = pred
         metrics_dict[sigma] = metrics
 
-        ## Denoise the data using Principal Components Analysis ##
+        ## Denoise the data using Moving Average method ##
         ## -------------------------------------------------------------------------------------- ##
-        pca = PCA()
-        pca.fit(df_noisy)
+        window_size = 5
+        df_denoised = pd.DataFrame()
+        df_denoised['x0'] = df_noisy['x0'].rolling(window=window_size, min_periods=1).mean()
+        df_denoised['x1'] = df_noisy['x1'].rolling(window=window_size, min_periods=1).mean()
+        df_denoised['y'] = df_noisy['y'].rolling(window=window_size, min_periods=1).mean()
 
-        # Select principal components with sufficient variance
-        cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
-        # 95% threshold for explained variance
-        n_components = np.argmax(cumulative_variance >= 0.95) + 1
 
-        # Reduce dimensionality and reconstruct the signal
-        pca_denoising = PCA(n_components=n_components)
-        data_reduced = pca_denoising.fit_transform(df_noisy)
-        df_denoised = pca_denoising.inverse_transform(data_reduced)
-        df_denoised = pd.DataFrame(df_denoised, columns=df_noisy.columns)
-
-        # Calc the metrics
+        # Show the metrics
         gt_values = df_data.values
         if sigma == 'mix':
             gt_values = np.tile(gt_values, (15,1))

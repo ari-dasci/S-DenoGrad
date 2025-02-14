@@ -21,7 +21,7 @@ Functions:
     plot_predictions: Plot predictions along with the original data or the
                       evolution of loss during training both in training and validation
     add_gaussian_noise: Adds Gaussian noise to specified columns in a DataFrame
-    exist_dir: Checks if a directory exists and, if not, creates it
+    make_dir: Checks if a directory exists and, if not, creates it
 
 Classes:
     MinMaxScalerCustom: Min Max Scaler with custom range for each column
@@ -34,6 +34,7 @@ import sys
 
 # Import libraries
 # ------------------------------------------------------------------------------------------------ #
+import platform
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -151,7 +152,7 @@ def symmetric_mean_absolute_percentage_error(y_true, y_pred):
     return smape
 
 
-# General functions
+# Data functions
 # ------------------------------------------------------------------------------------------------ #
 def win_generator(df, target_column, timesteps, future):
     """
@@ -323,7 +324,79 @@ def add_gaussian_noise(df:pd.DataFrame, columns:List[str], mean:float = 0.0, std
     return df
 
 
-def exist_dir(dir_path):
+# Genral functions
+# ------------------------------------------------------------------------------------------------ #
+def clear_terminal():
+    """
+    Clears the terminal screen based on the operating system.
+    """
+    if platform.system() == "Windows":
+        os.system('cls')
+    else:
+        os.system('clear')
+
+
+def show_menu(current_folder):
+    """
+    Displays a menu to navigate through directories and
+    allows the user to select a folder or a file.
+    
+    Parameters:
+    current_folder (str): The current directory path.
+    """
+    history = [current_folder]
+
+    while True:
+        clear_terminal()
+        print(f"Current folder: {current_folder}")
+        print('')
+        sub_folders = [f for f in os.listdir(current_folder)
+                       if os.path.isdir(os.path.join(current_folder, f))]
+        files = [f for f in os.listdir(current_folder)
+                 if os.path.isfile(os.path.join(current_folder, f))]
+
+        if not sub_folders and not files:
+            print("No subfolders or files in this folder.")
+            break
+
+        print("Select an option:")
+        for i, sub_folder in enumerate(sub_folders):
+            print(f"{i + 1}. [Folder] {sub_folder}")
+        for j, file in enumerate(files):
+            print(f"{len(sub_folders) + j + 1}.\t[File] {file}")
+
+        print("f. Return current folder.")
+        if len(history) > 1:
+            print("b. Go back to the previous folder")
+        print("0. Exit")
+
+        selection = input("Enter the number of the item or 'b' to go back: ")
+
+        if selection.isdigit():
+            selection = int(selection)
+            if selection == 0:
+                exit()
+            elif 1 <= selection <= len(sub_folders):
+                history.append(current_folder)
+                current_folder = os.path.join(current_folder, sub_folders[selection - 1])
+            elif len(sub_folders) < selection <= len(sub_folders) + len(files):
+                selected_file = files[selection - len(sub_folders) - 1]
+                current_folder = os.path.join(current_folder, selected_file)
+                print(f'File selected: {current_folder}')
+                break
+            else:
+                print("Invalid selection. Please try again.")
+        elif selection.lower() == 'b' and len(history) > 1:
+            current_folder = history.pop()
+        elif selection.lower() == 'f':
+            break
+        else:
+            print("Invalid input. Please try again.")
+
+    return current_folder
+
+
+def make_dir(dir_path):
     """
     Checks if a directory exists and, if not, creates it.
 

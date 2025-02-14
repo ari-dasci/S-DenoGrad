@@ -590,7 +590,7 @@ class Trainer:
             self.current_patience = 0
             self.best_model = copy.deepcopy(self.model)
 
-            if exist_dir(os.path.dirname(self.checkpoints_path)):
+            if make_dir(os.path.dirname(self.checkpoints_path)):
                 torch.save(
                     self.model.state_dict(),
                     f'{self.checkpoints_path}'

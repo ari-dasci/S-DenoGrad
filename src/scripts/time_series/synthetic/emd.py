@@ -27,14 +27,11 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
+from PyEMD import EMD
 
 # Seed
 random.seed(42)
 np.random.seed(42)
-torch.manual_seed(42)
 
 # Global variables
 CURRENT_DIR = os.getcwd()
@@ -53,33 +50,16 @@ sys.path.append(LIBS_PATH)
 VERBOSE = False
 # Even if there is a checkpoint, the model is retrained.
 FORCE_TRAINING = False
+# Name of this experiment that will appear in the result files.
+SUBFIX_NAME = 'emd'
+IS_TS = True
 
 # Local libraries
 from utils import add_gaussian_noise
-from dataset import TensorDataset
-from models import Trainer, XAI_benchmark, DenoisingAutoencoder
-
-# Make sure that the GPU is being used
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-assert device.type == "cuda"
-
+from models import XAI_benchmark
 
 # Functions definition #
 # ------------------------------------------------------------------------------------------------ #
-def polinomial_function(x_var:float):
-    """
-    Function that takes in a value x_var and returns its polinomial value.
-
-    Args:
-        x_var (float): value to be transformed.
-
-    Returns:
-        float: result of the polinomial function.
-    """
-
-    return x_var**4 -x_var**3 -20*(x_var**2) -20*x_var +6
-
-
 def dictionary_arrays_to_list(array_d:dict):
     """
     Run through a array_d dictionary converting its arrays to lists.
@@ -94,8 +74,6 @@ def dictionary_arrays_to_list(array_d:dict):
         return {k: dictionary_arrays_to_list(v) for k, v in array_d.items()}
     elif isinstance(array_d, np.ndarray):
         return array_d.tolist()
-    elif isinstance(array_d, (np.float32, np.float64)):
-        return float(array_d)
     else:
         return array_d
 
@@ -107,13 +85,14 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     predictions_dict = {}
     metrics_dict = {}
-
-    X = np.linspace(-5, 5, 10001)
-    y = polinomial_function(X)
-
-    df_data = pd.DataFrame({'x': X, 'y': y})
-    scaler = MinMaxScaler()
-    df_data = pd.DataFrame(scaler.fit_transform(df_data), columns=['x', 'y'])
+    df_data = pd.read_parquet(
+        os.path.join(
+            DATA_PATH,
+            'tabular',
+            'synthetic',
+            '3D.parquet'
+        )
+    )
     X_train, X_test, y_train, y_test = train_test_split(
         df_data['x'].values, df_data['y'].values, test_size=0.2, random_state=42
     )
@@ -133,8 +112,16 @@ if __name__ == '__main__':
             "p": 2,
             "n_jobs": None
         },
+        'arima': {
+            'order': (1, 1, 0),
+            'seasonal_order': (4, 0, 5, 12)
+        },
+        'auto_arima': None
     }
-    xai_benchmark_orig = XAI_benchmark(is_ts = False, model_params = model_params, verbose = VERBOSE)
+    xai_benchmark_orig = XAI_benchmark(is_ts = False,
+    model_params = model_params,
+    verbose = VERBOSE
+)
     xai_benchmark_orig.fit(X_train.reshape(-1,1), y_train)
     no_noise_pred, no_noise_metrics = xai_benchmark_orig.predict(
         X_test.reshape(-1,1),
@@ -195,6 +182,7 @@ if __name__ == '__main__':
         ## Calculate noisy histograms and Kullback-Leibler divergence with original histograms ##
         ## -------------------------------------------------------------------------------------- ##
         histogram_noisy = {}
+        metrics_dict[sigma] = {}
         for col in df_noisy.columns:
             hist, _ = np.histogram(df_noisy[col], bins=50, density=True)
             histogram_noisy[col] = hist + 1e-10
@@ -219,93 +207,29 @@ if __name__ == '__main__':
         predictions_dict[sigma] = pred
         metrics_dict[sigma] = metrics
 
-        ## Declare a Neural Network model and prepare the data to train it ##
+        ## Denoise the data using Empirical Mode Decomposition ##
         ## -------------------------------------------------------------------------------------- ##
-        train_noisy, test_noisy = train_test_split(
-            df_noisy.values, test_size=0.2, random_state=42
-        )
-        train_gt, test_gt = train_test_split(
-            df_data.values, test_size=0.2, random_state=42
-        )
+        # EMD decomposition
+        df_denoised = pd.DataFrame(columns=df_noisy.columns)
 
-        ### 'y' parameter should be the same as 'x' in a normal problem where the original ###
-        ### (no noise/clean) data is not available. Here, the original data is used. ###
-        ## -------------------------------------------------------------------------------------- ##
-        train_dataset = TensorDataset(
-            x=train_noisy,
-            y=train_noisy # TODO: train_gt # Use noisy for real case use.
-        )
-        # Transform the data into a tensor
-        val_dataset = TensorDataset(
-            x=test_noisy,
-            y=test_noisy # TODO: test_gt # Use noisy for real case use.
-        )
+        for col in df_noisy.columns:
+            emd = EMD()
+            imfs = emd(df_noisy[col].values)
+            # Reconstruction of the signal
+            df_denoised[col] = np.sum(imfs[2:], axis=0)
 
-        # Create the dataloaders
-        batch_size = 64
-        train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,
-                                      num_workers=0)
-        val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
-
-        # Create Neural Network model
-        model = DenoisingAutoencoder(
-            input_dim=train_noisy.shape[1],
-            latent_dim=32,
-        ).to(device)
-
-        # Set model parameters and create the model Trainer object
-        lr = 0.001
-        criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters(), lr=lr)
-        denoiser_checkpoint_path = os.path.join(
-            CHECKPOINT_PATH,
-            'tabular',
-            'synthetic',
-            '2D',
-            f'{sigma}',
-            f'DAE_{sigma}.pth'
-        )
-
-        # Define the trainer
-        trainer_basic = Trainer(
-            model=model,
-            train_generator=train_dataloader,
-            val_generator=val_dataloader,
-            device=device,
-            criterion=criterion,
-            optimizer=optimizer,
-            epoch_scheduler=None,
-            batch_scheduler=None,
-            patience=15,
-            epochs=500,
-            checkpoints_path=denoiser_checkpoint_path
-        )
-
-        ## Train the Neural Network or load its weights from a checkpoint ##
-        ## -------------------------------------------------------------------------------------- ##
-        if os.path.exists(denoiser_checkpoint_path) and not FORCE_TRAINING:
-            model.load_state_dict(torch.load(denoiser_checkpoint_path))
-        else:
-            model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
-
-
-        ## Predict and get the metrics for de NN model ##
-        ## -------------------------------------------------------------------------------------- ##
-        df_denoised = model(
-            torch.tensor(df_noisy.values).float().to(device)
-        ).cpu().detach().numpy()
-        df_denoised = pd.DataFrame(df_denoised, columns=['x', 'y'])
-
-        # Show the metrics
-        gt_values = df_noisy.values # TODO: df_data.values # Use noisy for real case use.
-        predicted_values = df_denoised
+        # Calc the metrics
+        gt_values = df_data.values
+        if sigma == 'mix':
+            gt_values = np.tile(gt_values, (15,1))
+        predicted_values = df_denoised.values
         mae = mean_absolute_error(gt_values, predicted_values)
         mape = mean_absolute_percentage_error(gt_values, predicted_values)
         mse = mean_squared_error(gt_values, predicted_values)
         rmse = np.sqrt(mse)
         r_squared = r2_score(gt_values, predicted_values)
 
-        dae_metrics = {
+        nn_metrics = {
             'mse': mse,
             'rmse': rmse,
             'mae': mae,
@@ -313,22 +237,21 @@ if __name__ == '__main__':
             'R2': r_squared
         }
 
-        predictions_dict[sigma]['dae'] = df_denoised.values
-        metrics_dict[sigma]['dae'] = dae_metrics
+        predictions_dict[sigma]['emd'] = predicted_values
+        metrics_dict[sigma]['emd'] = nn_metrics
 
         denoised_corr = df_denoised.corr()
 
         ## Perform XAI benchmark over Denoised data ##
         ## -------------------------------------------------------------------------------------- ##
-        xai_benchmark_denoised = XAI_benchmark(
-            is_ts = False,
-            model_params = model_params,
-            verbose = VERBOSE
-        )
+        xai_benchmark_denoised = XAI_benchmark(is_ts = False,
+        model_params = model_params,
+        verbose = VERBOSE
+    )
         xai_benchmark_denoised.fit(df_denoised['x'].values.reshape(-1,1), df_denoised['y'].values)
         xai_benchmark_denoised.save(
             path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','2D', f'{sigma}'),
-            subfix = f'DAE_denoised_{sigma}'
+            subfix = f'ma_denoised_{sigma}'
         )
 
         # Get the predictions and metrics. Denoised models over denoised data.
@@ -393,15 +316,15 @@ if __name__ == '__main__':
 
     # Save predictions
     with open(
-        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'DAE_predictions.json'),
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'emd_predictions.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(predictions_dict, file, ensure_ascii=False, indent=4)
 
-    # Save metrics
     metrics_dict = dictionary_arrays_to_list(metrics_dict)
+    # Save metrics
     with open(
-        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'DAE_metrics.json'),
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'emd_metrics.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(metrics_dict, file, ensure_ascii=False, indent=4)

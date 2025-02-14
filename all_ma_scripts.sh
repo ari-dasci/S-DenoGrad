@@ -1,14 +1,17 @@
 #!/bin/bash
 
-JOB_NAME="Rnet"
-PARTITION="dgx2"
+JOB_NAME="syn_ts"
+PARTITION="dgx,dgx2"
 
 SCRIPTS=(
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/house_prices/resnet.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/lattice_physics/resnet.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/parkinson/resnet.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/resnet.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/support/resnet.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/synthetic/dae.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/synthetic/emd.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/synthetic/grandient.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/synthetic/kalman.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/synthetic/ma.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/synthetic/pca.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/synthetic/resnet.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/synthetic/wavelet.py"
 )
 
 for SCRIPT in "${SCRIPTS[@]}"; do
