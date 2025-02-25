@@ -4,8 +4,6 @@ import sys
 import platform
 import json
 import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
 import pandas as pd
 from tqdm import tqdm
 from itertools import islice
@@ -17,7 +15,7 @@ TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
 DATA_PATH = os.path.join(CURRENT_DIR, 'out')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'insights', 'r2')
+OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'insights', 'r2', 'methods_comparison')
 
 assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
@@ -47,60 +45,64 @@ def list_files(init_folder):
 # Main
 if __name__ == "__main__":
     # Folder or file selection
-    selected_file_folder = show_menu(DATA_PATH)
+    selected_folder = show_menu(DATA_PATH)
     list_of_files = []
 
-    if os.path.isfile(selected_file_folder):
-        list_of_files.append(selected_file_folder)
+    # Check that a folder has been selected.
+    if os.path.isfile(selected_folder):
+        raise('A folder must be selected.')
 
-    else:
-        files = list_files(selected_file_folder)
-        for f in files:
-            if f.endswith('metrics.json'):
-                list_of_files.append(f)
+    noise_lvl = 0.05
+    # Walk through the folder until reach a leaf folder.
+    for root, dirs, files in os.walk(selected_folder):
+        if dirs: continue
 
-    if not list_of_files:
-        print('There are no files to proccess.')
-        exit()
+        # Stablish if the folder contains real/synthetic and tabular/time_series data.
+        is_real = 'real' in root
+        is_tabular = 'tabular' in root
 
-    # Count the number of plots that are going to be created
-    synthetic_files = sum(1 for file in list_of_files if 'synthetic' in file)
-    n_files = len(list_of_files) - synthetic_files + synthetic_files*16
+        # Read the gradient metrics to compare it with the others.
+        gradient_i = [f for f in files if 'gradient' in f and 'metrics' in f][0]
+        gradient_file = os.path.join(root, gradient_i)
+        with open(gradient_file, 'r') as f:
+            gradient_metrics = json.load(f)
 
-    # Iter through the files
-    for file in tqdm(list_of_files, total=n_files, desc="Creating plots"):
-        is_real = 'real' in file
-        metrics = None
-        with open(file, 'r') as archivo:
-            metrics = json.load(archivo)
-
-        noise_lvls = []
-        noise_dfs = [metrics]
-        no_noise_df = None
-        orig_tag = 'orig'
+        # Get the denoised_over_denoised and orig_over_denoised metrics from gradient file.
         ood_tag = 'orig_over_denoised'
+        denoised_gradient_metrics = {}
         if not is_real:
-            synthetic_dict = dict(islice(metrics.items(), 1, None))
-            noise_lvls = synthetic_dict.keys()
-            noise_dfs = synthetic_dict.values()
-            orig_tag = 'no_noise'
             ood_tag = 'noisy_over_denoised'
-            no_noise_df = pd.DataFrame(metrics[orig_tag])
+            denoised_gradient_metrics = dict(islice(gradient_metrics.items(), 1, None))
+            denoised_gradient_metrics = denoised_gradient_metrics[f'{noise_lvl}']
+        else:
+            denoised_gradient_metrics = gradient_metrics['denoised']
+    
+        dod_gradient_df = pd.DataFrame(denoised_gradient_metrics['denoised_over_denoised'])
+        ood_gradient_df = pd.DataFrame(denoised_gradient_metrics[ood_tag])
 
-        for noise_i, current_df in enumerate(noise_dfs):
-            if is_real:
-                orig_df = pd.DataFrame(current_df[orig_tag])
+        # Go through all the files to make the comparison with gradient metrics.
+        for file in tqdm(files):
+            method = file.split('_')[0]
+            if 'gradient' in method or 'metrics' not in file: continue
+
+            with open(os.path.join(root,file), 'r') as f:
+                file_metrics = json.load(f)
+
+            # Get the denoised_over_denoised and orig_over_denoised metrics from file file.
+            ood_tag = 'orig_over_denoised'
+            denoised_file_metrics = {}
+            if not is_real:
+                ood_tag = 'noisy_over_denoised'
+                denoised_file_metrics = dict(islice(file_metrics.items(), 1, None))
+                denoised_file_metrics = denoised_file_metrics[f'{noise_lvl}']
             else:
-                orig_df = pd.DataFrame(dict(islice(current_df.items(), len(current_df) - 3)))
-            denoised_dict = metrics['denoised'] if is_real else current_df
-            dod_df = pd.DataFrame(denoised_dict['denoised_over_denoised'])
-            doo_df = pd.DataFrame(denoised_dict['denoised_over_orig'])
-            ood_df = pd.DataFrame(denoised_dict[ood_tag])
+                denoised_file_metrics = file_metrics['denoised']
+            
+            dod_file_df = pd.DataFrame(denoised_file_metrics['denoised_over_denoised'])
+            ood_file_df = pd.DataFrame(denoised_file_metrics[ood_tag])
 
             # Lista de DataFrames
-            dfs = [orig_df, dod_df, doo_df, ood_df]
-            if not is_real:
-                dfs.insert(0, no_noise_df)
+            dfs = [dod_gradient_df, dod_file_df, ood_gradient_df, ood_file_df]
 
             # Obtener la intersección de las columnas en todos los DataFrames
             common_cols = set(dfs[0].columns)
@@ -109,16 +111,23 @@ if __name__ == "__main__":
 
             # Filtrar DataFrames para mantener solo las columnas en común
             dfs_filtered = [df[list(common_cols)].loc[['R2']] for df in dfs]
-
+            
             # Concatenar los DataFrames alineando por columnas comunes
             df_combined = pd.concat(dfs_filtered, axis=0)
             df_combined.dropna(axis=1, inplace=True)
             df_combined = df_combined.clip(lower=0.0)
 
             # Agregamos etiquetas para cada DataFrame
-            new_index = ['Original', 'Denoised-Denoised', 'Denoised-Original', 'Original-Denoised']
+            noise_tag = 'Original'
             if not is_real:
-                new_index.insert(1, 'Noisy')
+                noise_tag = 'Noisy'
+
+            new_index = [
+                'Ours: Denoised-Denoised',
+                f'{method.upper()}: Denoised-Denoised',
+                f'Ours: {noise_tag}-Denoised',
+                f'{method.upper()}: {noise_tag}-Denoised'
+            ]
             df_combined.index = new_index
             df_combined = df_combined.sort_index(axis=1)
 
@@ -128,13 +137,25 @@ if __name__ == "__main__":
             if df_combined.empty or df_combined.shape[1] == 0:
                 print(file)
                 raise ValueError("El DataFrame está vacío o no tiene columnas para graficar.")
-            df_combined.T.plot(kind='bar', ax=ax, width=bar_width, colormap="viridis")
+
+            # Obtener la lista de colores de tab20c en orden secuencial
+            tab20c_colors = plt.get_cmap("tab20").colors  # Lista con 20 colores
+
+            # Asignar colores manualmente en orden a cada serie de df_combined
+            custom_colors = tab20c_colors[:df_combined.shape[1]]  # Tantos colores como columnas tenga df_combined
+
+            df_combined.T.plot(
+                kind='bar',
+                ax=ax,
+                width=bar_width,
+                color=custom_colors
+            )
 
             # Añadir valores encima de las barras
             for container in ax.containers:
-                ax.bar_label(container, fmt="%.2f", fontsize=10, padding=3)
+                ax.bar_label(container, fmt="%.2f", fontsize=8, padding=3)
 
-            path_parts = file.split(os.path.sep)
+            path_parts = os.path.join(root, file).split(os.path.sep)
             denoising_method = path_parts[-1].split('_')[0]
             dataset = path_parts[-2]
             real_or_synthetic = path_parts[-3]
@@ -145,27 +166,24 @@ if __name__ == "__main__":
             noise_str = ''
             if not is_real:
                 synthetic_str = 'synthetic'
-
-                noise_lvl = (noise_i+1) * 0.01
                 noise_str = f'_s{noise_lvl}'
-                if noise_lvl == 0.16:
-                    noise_str = '_mix'
 
                 if 'time_series' in file:
                     dataset_str = ''
+                    dataset = denoising_method
                     real_or_synthetic = path_parts[-2]
                     tabular_or_ts = path_parts[-3]
 
             data_str = f'{synthetic_str} {dataset_str}{noise_str}'
             # Configuración de la gráfica
             ax.set_title(
-                f"Denoising method: {denoising_method.upper()} - Data: {data_str}\nR2 score per model",
+                f"Gradient VS {method.upper()} - Data: {data_str}\nR2 score comparison",
                 fontsize=14
             )
             ax.set_ylabel("R2 score", fontsize=12)
             ax.set_xlabel("Models", fontsize=12)
             ax.set_xticklabels(df_combined.columns, rotation=0, fontsize=11)
-            ax.legend(loc="upper right", bbox_to_anchor=(1.05, 1), fontsize=10)
+            ax.legend(loc="upper right", bbox_to_anchor=(1.15, 1.22), fontsize=10)
             ax.grid(axis="y", linestyle="--", alpha=0.7)
 
             denoising_method += f'{noise_str}.png'
@@ -175,3 +193,4 @@ if __name__ == "__main__":
             fig_path = os.path.join(fig_path, denoising_method)
             plt.savefig(fig_path, dpi=300, bbox_inches="tight")
             plt.close()
+

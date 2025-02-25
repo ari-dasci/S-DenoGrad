@@ -59,9 +59,8 @@ SUBFIX_NAME = 'dae'
 IS_TS = True
 
 # Local libraries
-from dataset import SlidingWindowDataset, TensorDataset
+from dataset import TensorDataset
 from models import Trainer, XAI_benchmark, DenoisingAutoencoder
-from dlnr import DLNoiseReduction
 from utils import symmetric_mean_absolute_percentage_error
 
 # Make sure that the GPU is being used
@@ -299,9 +298,9 @@ if __name__ == '__main__':
     predictions_dict['orig'][SUBFIX_NAME] = predicted_values
     metrics_dict['orig'][SUBFIX_NAME] = nn_metrics
 
+    denoised_corr = df_denoised.corr()
     ## Perform XAI benchmark over Denoised data ##
     ## ------------------------------------------------------------------------------------------ ##
-    denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
     df_denoised['y_shifted'] = df_denoised['y'].shift(-1)
     # Eliminar la última fila porque tendrá un NaN en la última columna
@@ -397,9 +396,9 @@ if __name__ == '__main__':
     metrics_dict['denoised']['orig_over_denoised'] = orig_over_denoised_metrics
 
     # Correlation diff metrics
-    metrics_dict['denoised']['corr_diff_orig_denoised'] = np.abs(
+    metrics_dict['denoised']['corr_diff_orig_denoised'] = np.nanmean(np.abs(
         orig_corr - denoised_corr
-    ).values.mean()
+    ).values)
 
     ## Calculate denoised histograms and Kullback-Leibler ##
     ## divergence with original and orig histograms ##

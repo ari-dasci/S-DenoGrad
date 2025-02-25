@@ -162,6 +162,7 @@ cython_debug/
 logs/
 imgs/
 data/
+out_old/
 out/
 *.out
 checkpoints/

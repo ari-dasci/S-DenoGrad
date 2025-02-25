@@ -632,7 +632,8 @@ class Trainer:
             disable=not verbose,
             leave=True,
             unit='epoch',
-            desc='Epochs loop'
+            desc='Epochs loop',
+            colour='green'
         )
 
         for epoch in epochs_progress_bar:
@@ -767,6 +768,8 @@ class XAI_benchmark:
             self.knn = None
         if self.is_ts:
             if model_params['auto_arima']:
+                if self.verbose:
+                    print(f'Fitting Auto-ARIMA model...')
                 self.auto_arima = auto_arima(**model_params['auto_arima'])
                 print(self.auto_arima.summary())
             else:
@@ -785,25 +788,25 @@ class XAI_benchmark:
             X (np.array): input training data.
             y (np.array): target training data.
         """
-        if self.verbose:
-            print('Fitting Ridge model...')
         if self.ridge:
+            if self.verbose:
+                print('Fitting Ridge model...')
             self.ridge.fit(X, y)
-        if self.verbose:
-            print('Fitting Partial Least Squares model...')
         if self.pls:
+            if self.verbose:
+                print('Fitting Partial Least Squares model...')
             self.pls.fit(X, y)
-        if self.verbose:
-            print('Fitting Decision Tree model...')
         if self.decision_tree:
+            if self.verbose:
+                print('Fitting Decision Tree model...')
             self.decision_tree.fit(X, y)
-        if self.verbose:
-            print('Fitting Support Vector Machine model...')
         if self.svr:
+            if self.verbose:
+                print('Fitting Support Vector Regressor model...')
             self.svr.fit(X, y)
-        if self.verbose:
-            print('Fitting K-Nearest Neighbours model...')
         if self.knn:
+            if self.verbose:
+                print('Fitting K-Nearest Neighbours model...')
             self.knn.fit(X, y)
         if self.is_ts:
             try:
@@ -811,15 +814,10 @@ class XAI_benchmark:
             except:
                 pass
 
-            model = ''
             if self.arima:
+                if self.verbose:
+                    print(f'Fitting ARIMA model...')
                 self.arima.fit(y)
-                model = 'ARIMA'
-            elif self.auto_arima:
-                # self.arima = self.auto_arima.fit(y)
-                model = 'Auto ARIMA'
-            if self.verbose:
-                print(f'Fitting {model} model...')
 
         if self.verbose:
             print('All models fitted!')
@@ -902,6 +900,7 @@ class XAI_benchmark:
             path (str): path to save the models.
             subfix (str): extra name for info.
         """
+        make_dir(path)
         names = ['ridge', 'pls', 'decision_tree', 'svr', 'knn']
         models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn]
         for name, model in zip(names, models):
@@ -915,7 +914,7 @@ class XAI_benchmark:
                 pickle.dump(self.arima, f)
 
 
-    def load(self, folder_path:str):
+    def load(self, folder_path:str, must_have:str='', subfix:str=''):
         """
         Save the XAI models in pickle format.
 
@@ -926,12 +925,14 @@ class XAI_benchmark:
         models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn, self.arima]
         loaded_models = {}
 
+        make_dir(folder_path)
+
         for file_name in os.listdir(folder_path):
             full_path = os.path.join(folder_path, file_name)
-            if os.path.isfile(full_path):
-                subfix = file_name.split('_')[0]
+            if os.path.isfile(full_path) and must_have in full_path and full_path.endswith(f'{subfix}.pkl'):
+                prefix = file_name.split('_')[0]
                 try:
-                    i_list = names.index(subfix)
+                    i_list = names.index(prefix)
                     with open(full_path, 'rb') as f:
                         loaded_models[names[i_list]] = pickle.load(f)
                         print(f'Loaded {names[i_list]} model')

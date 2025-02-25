@@ -1,14 +1,14 @@
 # pylint: disable=import-error
 # pylint: disable=wrong-import-position
 """
-title: synthetic_2D_exp
+title: synthetic_3D_exp
 author: José Javier Alonso Ramos
 email: jjalonso@ugr.es
 institution: DaSCI - UGR
 
 Description:
-Performs a synthetic experiment with a 2D dataset.
-The experiment consists of generating a 2D dataset with a polinomial function and
+Performs a synthetic experiment with a 3D dataset.
+The experiment consists of generating a 3D dataset with a polinomial function and
 adding Gaussian noise to it. Then, a neural network model is trained to predict the target
 variable. Finally, the gradients are used to reduce the noise in the data.
 """
@@ -48,6 +48,8 @@ sys.path.append(LIBS_PATH)
 VERBOSE = False
 # Even if there is a checkpoint, the model is retrained.
 FORCE_TRAINING = False
+# Name of this experiment that will appear in the result files.
+SUBFIX_NAME = 'kalman'
 
 # Local libraries
 from utils import add_gaussian_noise
@@ -99,11 +101,11 @@ if __name__ == '__main__':
             DATA_PATH,
             'tabular',
             'synthetic',
-            '3D.parquet'
+            '3D_random.parquet'
         )
     )
     X_train, X_test, y_train, y_test = train_test_split(
-        df_data['x'].values, df_data['y'].values, test_size=0.2, random_state=42
+        df_data[['x0', 'x1']].values, df_data['y'].values, test_size=0.2, random_state=42
     )
 
     ## Perform XAI benchmark over no noisy (or original) data ##
@@ -112,7 +114,7 @@ if __name__ == '__main__':
         'ridge': {"alpha": 1.0},
         'pls': {"n_components": 1},
         'tree': {"max_depth": 5},
-        'svm': {"dual": 'auto'},
+        'svm': {"kernel": 'poly', "degree": 2},
         'knn': {
             "n_neighbors": 5,
             "weights": 'uniform',
@@ -122,18 +124,20 @@ if __name__ == '__main__':
             "n_jobs": None
         },
     }
-    xai_benchmark_orig = XAI_benchmark(is_ts = False,
-    model_params = model_params,
-    verbose = VERBOSE
-)
-    xai_benchmark_orig.fit(X_train.reshape(-1,1), y_train)
+    xai_benchmark_orig = XAI_benchmark(
+        is_ts = False,
+        model_params = model_params,
+        verbose = VERBOSE
+    )
+    xai_benchmark_orig.fit(X_train, y_train)
     no_noise_pred, no_noise_metrics = xai_benchmark_orig.predict(
-        X_test.reshape(-1,1),
-        y_test, get_metrics=True
+        X_test,
+        y_test,
+        get_metrics=True
     )
 
     xai_benchmark_orig.save(
-        path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','2D', 'no_noise'),
+        path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','3D', 'no_noise'),
         subfix = 'no_noise'
     )
 
@@ -180,7 +184,7 @@ if __name__ == '__main__':
         noisy_corr = df_noisy.corr()
 
         X_train_noisy, X_test_noisy, y_train_noisy, y_test_noisy = train_test_split(
-            df_noisy['x'].values, df_noisy['y'].values, test_size=0.2, random_state=42
+            df_noisy[['x0', 'x1']].values, df_noisy['y'].values, test_size=0.2, random_state=42
         )
 
         ## Calculate noisy histograms and Kullback-Leibler divergence with original histograms ##
@@ -198,14 +202,14 @@ if __name__ == '__main__':
             model_params = model_params,
             verbose = VERBOSE
         )
-        xai_benchmark_noisy.fit(X_train_noisy.reshape(-1,1), y_train_noisy)
+        xai_benchmark_noisy.fit(X_train_noisy, y_train_noisy)
         pred, metrics = xai_benchmark_noisy.predict(
-            X_test_noisy.reshape(-1,1),
-            y_test_noisy,
+            X_test_noisy,
+            y_test_noisy.reshape(-1,1),
             get_metrics=True
         )
         xai_benchmark_noisy.save(
-            path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','2D', f'{sigma}'),
+            path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','3D', f'{sigma}'),
             subfix = f'noise_{sigma}'
         )
         predictions_dict[sigma] = pred
@@ -257,8 +261,8 @@ if __name__ == '__main__':
             'R2': r_squared
         }
 
-        predictions_dict[sigma]['kalman_transform'] = predicted_values
-        metrics_dict[sigma]['kalman_transform'] = nn_metrics
+        predictions_dict[sigma][SUBFIX_NAME] = predicted_values
+        metrics_dict[sigma][SUBFIX_NAME] = nn_metrics
 
         denoised_corr = df_denoised.corr()
 
@@ -268,27 +272,27 @@ if __name__ == '__main__':
         model_params = model_params,
         verbose = VERBOSE
     )
-        xai_benchmark_denoised.fit(df_denoised['x'].values.reshape(-1,1), df_denoised['y'].values)
+        xai_benchmark_denoised.fit(df_denoised[['x0', 'x1']].values, df_denoised['y'].values)
         xai_benchmark_denoised.save(
-            path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','2D', f'{sigma}'),
-            subfix = f'ma_denoised_{sigma}'
+            path = os.path.join(CHECKPOINT_PATH,'tabular','synthetic','3D', f'{sigma}'),
+            subfix = f'{SUBFIX_NAME}_denoised_{sigma}'
         )
 
         # Get the predictions and metrics. Denoised models over denoised data.
         pred_over_denoised, metric_over_denoised = xai_benchmark_denoised.predict(
-            df_denoised['x'].values.reshape(-1,1),
+            df_denoised[['x0', 'x1']].values,
             df_denoised['y'].values.reshape(-1,1),
             get_metrics=True
         )
         # Get the predictions and metrics. Denoised models over no noise (original) data.
         pred_over_orig, metric_over_orig = xai_benchmark_denoised.predict(
-            df_data['x'].values.reshape(-1,1),
-            df_data['y'].values,
+            df_data[['x0', 'x1']].values,
+            df_data['y'].values.reshape(-1,1),
             get_metrics=True
         )
         # Get the predictions and metrics. Noisy models over denoised data.
         noisy_over_denoised_pred, noisy_over_denoised_metrics = xai_benchmark_noisy.predict(
-            df_denoised['x'].values.reshape(-1,1),
+            df_denoised[['x0', 'x1']].values,
             df_denoised['y'].values.reshape(-1,1),
             get_metrics=True
         )
@@ -301,15 +305,15 @@ if __name__ == '__main__':
         metrics_dict[sigma]['noisy_over_denoised'] = noisy_over_denoised_metrics
 
         # Correlation diff metrics
-        metrics_dict[sigma]['corr_diff_orig_noisy'] = np.abs(
+        metrics_dict[sigma]['corr_diff_orig_noisy'] = np.nanmean(np.abs(
             no_noise_corr - noisy_corr
-        ).values.mean()
-        metrics_dict[sigma]['corr_diff_orig_denoised'] = np.abs(
+        ).values)
+        metrics_dict[sigma]['corr_diff_orig_denoised'] = np.nanmean(np.abs(
             no_noise_corr - denoised_corr
-        ).values.mean()
-        metrics_dict[sigma]['corr_diff_noisy_denoised'] = np.abs(
+        ).values)
+        metrics_dict[sigma]['corr_diff_noisy_denoised'] = np.nanmean(np.abs(
             noisy_corr - denoised_corr
-        ).values.mean()
+        ).values)
 
 
         ## Calculate denoised histograms and Kullback-Leibler ##
@@ -336,7 +340,7 @@ if __name__ == '__main__':
 
     # Save predictions
     with open(
-        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'kalman_predictions.json'),
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '3D', f'{SUBFIX_NAME}_predictions.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(predictions_dict, file, ensure_ascii=False, indent=4)
@@ -344,7 +348,7 @@ if __name__ == '__main__':
     metrics_dict = dictionary_arrays_to_list(metrics_dict)
     # Save metrics
     with open(
-        os.path.join(OUT_PATH, 'tabular', 'synthetic', '2D', 'kalman_metrics.json'),
+        os.path.join(OUT_PATH, 'tabular', 'synthetic', '3D', f'{SUBFIX_NAME}_metrics.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(metrics_dict, file, ensure_ascii=False, indent=4)

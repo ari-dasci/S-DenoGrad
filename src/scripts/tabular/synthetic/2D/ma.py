@@ -284,15 +284,15 @@ if __name__ == '__main__':
         metrics_dict[sigma]['noisy_over_denoised'] = noisy_over_denoised_metrics
 
         # Correlation diff metrics
-        metrics_dict[sigma]['corr_diff_orig_noisy'] = np.abs(
+        metrics_dict[sigma]['corr_diff_orig_noisy'] = np.nanmean(np.abs(
             no_noise_corr - noisy_corr
-        ).values.mean()
-        metrics_dict[sigma]['corr_diff_orig_denoised'] = np.abs(
+        ).values)
+        metrics_dict[sigma]['corr_diff_orig_denoised'] = np.nanmean(np.abs(
             no_noise_corr - denoised_corr
-        ).values.mean()
-        metrics_dict[sigma]['corr_diff_noisy_denoised'] = np.abs(
+        ).values)
+        metrics_dict[sigma]['corr_diff_noisy_denoised'] = np.nanmean(np.abs(
             noisy_corr - denoised_corr
-        ).values.mean()
+        ).values)
 
 
         ## Calculate denoised histograms and Kullback-Leibler ##

@@ -336,7 +336,7 @@ def clear_terminal():
         os.system('clear')
 
 
-def show_menu(current_folder):
+def show_menu(current_folder, show_files:bool = True):
     """
     Displays a menu to navigate through directories and
     allows the user to select a folder or a file.
@@ -362,8 +362,9 @@ def show_menu(current_folder):
         print("Select an option:")
         for i, sub_folder in enumerate(sub_folders):
             print(f"{i + 1}. [Folder] {sub_folder}")
-        for j, file in enumerate(files):
-            print(f"{len(sub_folders) + j + 1}.\t[File] {file}")
+        if show_files:
+            for j, file in enumerate(files):
+                print(f"{len(sub_folders) + j + 1}.\t[File] {file}")
 
         print("f. Return current folder.")
         if len(history) > 1:
@@ -379,7 +380,7 @@ def show_menu(current_folder):
             elif 1 <= selection <= len(sub_folders):
                 history.append(current_folder)
                 current_folder = os.path.join(current_folder, sub_folders[selection - 1])
-            elif len(sub_folders) < selection <= len(sub_folders) + len(files):
+            elif len(sub_folders) < selection <= len(sub_folders) + len(files) and show_files:
                 selected_file = files[selection - len(sub_folders) - 1]
                 current_folder = os.path.join(current_folder, selected_file)
                 print(f'File selected: {current_folder}')

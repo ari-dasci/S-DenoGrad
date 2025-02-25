@@ -323,9 +323,9 @@ if __name__ == '__main__':
     metrics_dict['denoised']['orig_over_denoised'] = orig_over_denoised_metrics
 
     # Correlation diff metrics
-    metrics_dict['denoised']['corr_diff_orig_denoised'] = np.abs(
+    metrics_dict['denoised']['corr_diff_orig_denoised'] = np.nanmean(np.abs(
         orig_corr - denoised_corr
-    ).values.mean()
+    ).values)
 
     ## Calculate denoised histograms and Kullback-Leibler ##
     ## divergence with original and orig histograms ##

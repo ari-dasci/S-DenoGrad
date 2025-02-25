@@ -50,7 +50,7 @@ assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
 
 # Show info on the terminal about how the execution is going.
-VERBOSE = False
+VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
 FORCE_TRAINING = False
 
@@ -161,7 +161,7 @@ if __name__ == '__main__':
 
     ## Add gaussian noise to the data in all variables ##
     ## ------------------------------------------------------------------------------------------ ##
-    for sigma in np.arange(0.01, 0.17, 0.01):
+    for sigma in np.arange(0.01, 0.16, 0.01):
         sigma = round(sigma, 2)
         if sigma == 0.16:
             sigma = 'mix'
@@ -361,15 +361,15 @@ if __name__ == '__main__':
         metrics_dict[sigma]['noisy_over_denoised'] = noisy_over_denoised_metrics
 
         # Correlation diff metrics
-        metrics_dict[sigma]['corr_diff_orig_noisy'] = np.abs(
+        metrics_dict[sigma]['corr_diff_orig_noisy'] = np.nanmean(np.abs(
             no_noise_corr - noisy_corr
-        ).values.mean()
-        metrics_dict[sigma]['corr_diff_orig_denoised'] = np.abs(
+        ).values)
+        metrics_dict[sigma]['corr_diff_orig_denoised'] = np.nanmean(np.abs(
             no_noise_corr - denoised_corr
-        ).values.mean()
-        metrics_dict[sigma]['corr_diff_noisy_denoised'] = np.abs(
+        ).values)
+        metrics_dict[sigma]['corr_diff_noisy_denoised'] = np.nanmean(np.abs(
             noisy_corr - denoised_corr
-        ).values.mean()
+        ).values)
 
 
         ## Calculate denoised histograms and Kullback-Leibler ##
