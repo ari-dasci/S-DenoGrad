@@ -309,10 +309,10 @@ if __name__ == '__main__':
     if FORCE_TRAINING_POST_XAI:
         xai_benchmark_denoised.fit(X_train_denoised, y_train_denoised)
     else:
-        xai_benchmark_denoised.load(os.path.join(CHECKPOINT_PATH, 'denoised'))
+        xai_benchmark_denoised.load(os.path.join(CHECKPOINT_PATH, 'denoised', 'kalman'))
 
     xai_benchmark_denoised.save(
-        path = os.path.join(CHECKPOINT_PATH, 'denoised'),
+        path = os.path.join(CHECKPOINT_PATH, 'denoised', 'kalman'),
         subfix = f'{SUBFIX_NAME}_denoised'
     )
 

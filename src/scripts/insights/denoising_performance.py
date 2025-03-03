@@ -133,8 +133,7 @@ if __name__ == "__main__":
             fig, ax = plt.subplots(figsize=(10, 6))
             bar_width = 0.7
             if df_combined.empty or df_combined.shape[1] == 0:
-                print(file)
-                raise ValueError("El DataFrame está vacío o no tiene columnas para graficar.")
+                raise ValueError(f"File: {file}. Empty Dataframe.")
             df_combined.T.plot(kind='bar', ax=ax, width=bar_width, colormap="viridis")
 
             # Añadir valores encima de las barras

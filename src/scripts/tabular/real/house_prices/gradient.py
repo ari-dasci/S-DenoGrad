@@ -52,7 +52,7 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING = True
+FORCE_TRAINING = False
 # Name of this experiment that will appear in the result files.
 SUBFIX_NAME = 'gradient'
 

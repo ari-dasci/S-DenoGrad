@@ -49,11 +49,11 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING_PRE_XAI = False
-FORCE_TRAINING_NN = False
+FORCE_TRAINING_PRE_XAI = True
+FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'emd'
+SUBFIX_NAME = 'dae'
 IS_TS = True
 
 # Local libraries
@@ -268,10 +268,10 @@ if __name__ == '__main__':
     if FORCE_TRAINING_POST_XAI:
         xai_benchmark_denoised.fit(X_train_denoised, y_train_denoised)
     else:
-        xai_benchmark_denoised.load(os.path.join(CHECKPOINT_PATH, 'denoised'))
+        xai_benchmark_denoised.load(os.path.join(CHECKPOINT_PATH, 'denoised', 'dae'))
 
     xai_benchmark_denoised.save(
-        path = os.path.join(CHECKPOINT_PATH, 'denoised'),
+        path = os.path.join(CHECKPOINT_PATH, 'denoised', 'dae'),
         subfix = f'{SUBFIX_NAME}_denoised'
     )
 

@@ -135,8 +135,7 @@ if __name__ == "__main__":
             fig, ax = plt.subplots(figsize=(10, 6))
             bar_width = 0.7
             if df_combined.empty or df_combined.shape[1] == 0:
-                print(file)
-                raise ValueError("El DataFrame está vacío o no tiene columnas para graficar.")
+                raise ValueError(f"File: {file}. Empty Dataframe.")
 
             # Obtener la lista de colores de tab20c en orden secuencial
             tab20c_colors = plt.get_cmap("tab20").colors  # Lista con 20 colores

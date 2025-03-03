@@ -164,5 +164,6 @@ imgs/
 data/
 out_old/
 out/
+out_not_valid/
 *.out
 checkpoints/

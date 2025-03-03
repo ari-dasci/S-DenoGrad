@@ -15,7 +15,7 @@ TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
 CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
 LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
 DATA_PATH = os.path.join(CURRENT_DIR, 'out')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'insights', 'correlation')
+OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'insights', 'kl_divergence')
 
 assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
@@ -63,73 +63,94 @@ if __name__ == "__main__":
         is_tabular = 'tabular' in root
 
         # Go through all the files to make the comparison with gradient metrics.
-        correlation_dict = {}
+        kl_orig_denoised_dict = {}
         for file in tqdm(files):
             method = file.split('_')[0]
             if 'metrics' not in file:
                 continue
 
-            correlation_dict[method] = {}
+            kl_orig_denoised_dict[method] = {}
 
             with open(os.path.join(root, file), 'r', encoding='utf-8') as f:
                 file_metrics = json.load(f)
 
             # Get the denoised_over_denoised and orig_over_denoised metrics from file file.
             denoised_file_metrics = {}
-            orig_noise_corr = None
-            orig_denoised_corr = None
             if not is_real:
                 denoised_file_metrics = dict(islice(file_metrics.items(), 1, None))
                 denoised_file_metrics = denoised_file_metrics[f'{noise_lvl}']
-
-                orig_noise_corr = denoised_file_metrics['corr_diff_orig_noisy']
-                correlation_dict[method]['orig_noisy'] = orig_noise_corr
             else:
                 denoised_file_metrics = file_metrics['denoised']
 
-            orig_denoised_corr = denoised_file_metrics['corr_diff_orig_denoised']
-            correlation_dict[method]['orig_denoised'] = orig_denoised_corr
+            current_kl_metrics = {
+                k.split('kl_orig_denoised_')[1]: v
+                for k, v in denoised_file_metrics.items()
+                if 'kl_orig_denoised_' in k
+            }
+            kl_orig_denoised_dict[method].update(current_kl_metrics)
 
-        df_corr = pd.DataFrame(correlation_dict)
-        # df_corr = df_corr[sorted(df_corr.columns)]
-        df_corr = df_corr[df_corr.mean().sort_values().index]
-        df_corr.index.name = 'Correlation diference between'
-        if not is_real:
-            df_corr = df_corr.reset_index().melt(
-                id_vars='Correlation diference between',
-                var_name='Method',
-                value_name='Correlation difference'
-            )
+        df_kl = pd.DataFrame(kl_orig_denoised_dict)
+        df_kl = df_kl[sorted(df_kl.columns)]
 
-
-        # Crear y guardar la gráfica
+        # Make and save KL-HEATMAP
+        # ---------------------------------------------------------------------------------------- #
         fig, ax = plt.subplots(figsize=(10, 6))
-        bar_width = 0.7
-        if df_corr.empty or df_corr.shape[1] == 0:
+        if df_kl.empty or df_kl.shape[1] == 0:
             raise ValueError(f"File: {file}. Empty Dataframe.")
 
-        # df_corr.T.plot(
+        sns.heatmap(df_kl, cmap="coolwarm", linewidths=0.5)
+
+        path_parts = root.split(os.path.sep)
+        dataset = path_parts[-1]
+        real_or_synthetic = path_parts[-2]
+        tabular_or_ts = path_parts[-3]
+        # Guardar la figura
+        dataset_str = dataset.upper()
+        noise_str = ''
+        if not is_real:
+            noise_str = f'_s{noise_lvl}'
+
+            if not is_tabular:
+                dataset_str = ''
+                dataset = 'synthetic'
+                real_or_synthetic = path_parts[-1]
+                tabular_or_ts = path_parts[-2]
+
+        data_str = f'{tabular_or_ts} {real_or_synthetic} {dataset_str}{noise_str}'
+        # Configuración de la gráfica
+        ax.set_title(
+            f"KL divergence per Variable and Method\nData: {data_str}",
+            fontsize=14
+        )
+        ax.set_ylabel("Methods", fontsize=12)
+        ax.set_xlabel("Variables", fontsize=12)
+        ax.grid(axis="y", linestyle="--", alpha=0.7)
+
+        fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
+        make_dir(fig_path)
+        fig_path = os.path.join(fig_path, f'{dataset}_heatmap.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
+
+        # Make and save KL-BAR PLOT
+        # ---------------------------------------------------------------------------------------- #
+        fig, ax = plt.subplots(figsize=(10, 6))
+        if df_kl.empty or df_kl.shape[1] == 0:
+            raise ValueError("El DataFrame está vacío o no tiene columnas para graficar.")
+
+        # df_kl.mean().plot(
         #     kind='bar',
         #     ax=ax,
-        #     width=bar_width,
-        #     colormap='tab20'
+        #     width=0.7,
+        #     color='skyblue'
         # )
-
-        if is_real:
-            sns.barplot(
-                data=df_corr,
-                ax=ax,
-                palette='viridis'
-            )
-        else:
-            sns.barplot(
-                x='Method',
-                y='Correlation difference',
-                hue='Correlation diference between',
-                data=df_corr,
-                palette='coolwarm'
-            )
-
+        
+        sns.barplot(
+            data=df_kl.mean(),
+            ax=ax,
+            # color='skyblue'
+        )
         # Añadir valores encima de las barras
         for container in ax.containers:
             ax.bar_label(container, fmt="%.2f", fontsize=8, padding=3)
@@ -153,18 +174,16 @@ if __name__ == "__main__":
         data_str = f'{tabular_or_ts} {real_or_synthetic} {dataset_str}{noise_str}'
         # Configuración de la gráfica
         ax.set_title(
-            f"Correlation difference comparison\nData: {data_str}",
+            f"Mean KL divergence per Method\nData: {data_str}",
             fontsize=14
         )
-        ax.set_ylabel("Correlation difference", fontsize=12)
-        ax.set_xlabel("Denoising method", fontsize=12)
-        # ax.set_xticklabels(df_corr.columns, rotation=0, fontsize=11)
-        # ax.legend(loc="upper right", bbox_to_anchor=(1.15, 1.22), fontsize=10)
+        ax.set_ylabel("Methods", fontsize=12)
+        ax.set_xlabel("KL mean", fontsize=12)
         ax.grid(axis="y", linestyle="--", alpha=0.7)
 
 
         fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
         make_dir(fig_path)
-        fig_path = os.path.join(fig_path, f'{dataset}.png')
+        fig_path = os.path.join(fig_path, f'{dataset}_barplot.png')
         plt.savefig(fig_path, dpi=300, bbox_inches="tight")
         plt.close()

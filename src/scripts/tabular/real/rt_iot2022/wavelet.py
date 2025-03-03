@@ -20,8 +20,12 @@ import os
 import sys
 import json
 import random
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
+import dask.array as da
+from dask.dataframe import from_pandas
+
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
@@ -53,7 +57,7 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING = True
+FORCE_TRAINING = False
 # Name of this experiment that will appear in the result files.
 SUBFIX_NAME = 'wave'
 
@@ -152,12 +156,19 @@ if __name__ == '__main__':
     ## Calculate orignal histograms and correlation matrix ##
     ## ------------------------------------------------------------------------------------------ ##
     orig_corr = df_data.corr()
-    # histogram_orig = {}
-    # histo_bins_orig = {}
-    # for col in df_data.columns:
-    #     hist, bin_edges = np.histogram(df_data[col], bins='auto', density=True)
-    #     histogram_orig[col] = hist + 1e-10
-    #     histo_bins_orig[col] = len(bin_edges) - 1
+    histogram_orig = {}
+    histo_bins_orig = {}
+    for col in tqdm(df_data.columns):
+        dask_data = from_pandas(df_data[col], npartitions=len(df_data[col]))
+        hist, bin_edges = da.histogram(
+            dask_data,
+            bins=50,
+            density=True,
+            range=(df_data[col].min(), df_data[col].max())
+        )
+        hist = hist.compute()
+        histogram_orig[col] = hist + 1e-10
+        histo_bins_orig[col] = len(bin_edges) - 1
 
     X_train_orig, X_test_orig, y_train_orig, y_test_orig = train_test_split(
         df_data[input_vars].values, df_data['y'].values, test_size=0.2, random_state=42
@@ -256,14 +267,20 @@ if __name__ == '__main__':
     ## Calculate denoised histograms and Kullback-Leibler ##
     ## divergence with original and orig histograms ##
     ## -------------------------------------------------------------------------------------- ##
-    # histogram_denoised = {}
-    # for col in df_denoised.columns:
-    #     n_bin = histo_bins_orig[col]
-    #     hist, _ = np.histogram(df_denoised[col], bins=n_bin, density=True)
-    #     histogram_denoised[col] = hist + 1e-10
+    histogram_denoised = {}
+    for col in tqdm(df_denoised.columns):
+        dask_denoised_data = from_pandas(df_denoised[col], npartitions=len(df_denoised[col]))
+        hist, _ = da.histogram(
+            dask_denoised_data,
+            bins=50,
+            density=True,
+            range=(df_denoised[col].min(), df_denoised[col].max())
+        )
+        hist = hist.compute()
+        histogram_denoised[col] = hist + 1e-10
 
-    #     kl_div = entropy(histogram_orig[col], histogram_denoised[col])
-    #     metrics_dict['denoised'][f'kl_orig_denoised_{col}'] = kl_div
+        kl_div = entropy(histogram_orig[col], histogram_denoised[col])
+        metrics_dict['denoised'][f'kl_orig_denoised_{col}'] = kl_div
 
 
     ## Save the metrics and the predictions calculated over the entire script ##
