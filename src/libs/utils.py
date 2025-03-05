@@ -336,7 +336,7 @@ def clear_terminal():
         os.system('clear')
 
 
-def show_menu(current_folder, show_files:bool = True):
+def show_menu(current_folder, show_files:bool = True, init_text:str = ''):
     """
     Displays a menu to navigate through directories and
     allows the user to select a folder or a file.
@@ -348,6 +348,7 @@ def show_menu(current_folder, show_files:bool = True):
 
     while True:
         clear_terminal()
+        print(init_text)
         print(f"Current folder: {current_folder}")
         print('')
         sub_folders = [f for f in os.listdir(current_folder)
