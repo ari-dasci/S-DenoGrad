@@ -733,7 +733,7 @@ class Trainer:
         self.best_model.eval()
         for batch_x, _ in data_generator:
             batch_x = batch_x.to(self.device, dtype=torch.float32)
-            predictions.append(self.best_model(batch_x))
+            predictions.append(self.best_model(batch_x).cpu().detach().numpy())
 
         return predictions
 

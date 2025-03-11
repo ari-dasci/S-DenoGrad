@@ -4,13 +4,8 @@ JOB_NAME="rt_"
 PARTITION="dgx2,dgx"
 
 SCRIPTS=(
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/dae.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/emd.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/gradient.py"
-    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/kalman.py"
-    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/pca.py"
-    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/resnet.py"
-    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/tabular/real/rt_iot2022/wavelet.py"
+    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/ECL/dae.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/ECL/gradient.py"
 )
 
 for SCRIPT in "${SCRIPTS[@]}"; do

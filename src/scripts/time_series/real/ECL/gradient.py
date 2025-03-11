@@ -63,6 +63,7 @@ from dataset import SlidingWindowDataset
 from models import Trainer, XAI_benchmark, LSTMModel
 from dlnr import DLNoiseReduction
 from utils import symmetric_mean_absolute_percentage_error
+import TSFEDL.models_pytorch as TSFEDL 
 
 # Make sure that the GPU is being used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -224,13 +225,15 @@ if __name__ == '__main__':
         X_train_nn,
         y_train_nn,
         window_size=window_size,
-        future=1
+        future=1,
+        cnn=True
     )
     val_dataset = SlidingWindowDataset(
         X_test_nn,
         y_test_nn,
         window_size=window_size,
-        future=1
+        future=1,
+        cnn=True
     )
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -240,6 +243,13 @@ if __name__ == '__main__':
     hidden_size = 128  # Número de neuronas en la capa oculta
     output_size = 1  # Predicción de una variable
     model = LSTMModel(input_size, hidden_size, output_size).to(device)
+    
+    top_module = nn.Sequential(nn.Linear(in_features=67, out_features=1))
+    model = TSFEDL.CaiWenjuan(
+        in_features=input_size,
+        top_module=top_module,
+        loss=nn.MSELoss()
+    ).to(device)
 
     # Set model parameters and create the model Trainer object
     lr = 0.001
@@ -317,9 +327,9 @@ if __name__ == '__main__':
 
     df_denoised = df_data.copy()
     df_denoised[input_vars], old_y = dlnr.transform(
-        nrr=0.5,
+        nrr=0.05,
         nr_threshold=0.01,
-        max_epochs=50,
+        max_epochs=200,
         plot_progress=False,
         path_to_save_imgs=None,
         denoise_y=False

@@ -98,7 +98,7 @@ if __name__ == "__main__":
         if df_kl.empty or df_kl.shape[1] == 0:
             raise ValueError(f"File: {file}. Empty Dataframe.")
 
-        sns.heatmap(df_kl, cmap="coolwarm", linewidths=0.5)
+        sns.heatmap(df_kl, cmap="coolwarm", linewidths=0.01)
 
         path_parts = root.split(os.path.sep)
         dataset = path_parts[-1]
@@ -124,7 +124,7 @@ if __name__ == "__main__":
         )
         ax.set_ylabel("Methods", fontsize=12)
         ax.set_xlabel("Variables", fontsize=12)
-        ax.grid(axis="y", linestyle="--", alpha=0.7)
+        # ax.grid(axis="y", linestyle="--", alpha=0.7)
 
         fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
         make_dir(fig_path)
@@ -149,7 +149,7 @@ if __name__ == "__main__":
         sns.barplot(
             data=df_kl.mean(),
             ax=ax,
-            # color='skyblue'
+            palette='viridis'
         )
         # Añadir valores encima de las barras
         for container in ax.containers:

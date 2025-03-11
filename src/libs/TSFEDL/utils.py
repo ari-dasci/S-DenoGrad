@@ -1,6 +1,9 @@
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.keras import layers
+except:
+    pass
 import torch
 from torch import nn
 from torch.nn import functional as F

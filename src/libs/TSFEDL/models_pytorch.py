@@ -118,9 +118,9 @@ class OhShuLih_Classifier(nn.Module):
         self.model = nn.Sequential(
             nn.Dropout(p=0.2),
             nn.Linear(in_features=in_features, out_features=20),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.Linear(in_features=20, out_features=10),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.Linear(in_features=10, out_features=n_classes)
         )
 
@@ -181,16 +181,16 @@ class OhShuLih(TSFEDL_BaseModule):
         # NOTE: INPUT SHAPE MUST BE (N, C, L) where N is the batch size, C is the NUMBER OF CHANNEL (as opposite to keras)
         # and L is the number of timesteps of Length of the 1D signal.
         conv_layers.append(nn.Conv1d(in_channels=in_features, out_channels=3, kernel_size=20, bias=False, stride=1, padding=19))
-        conv_layers.append(nn.ReLU())
+        conv_layers.append(nn.Sigmoid())
         conv_layers.append(nn.MaxPool1d(kernel_size=2))
 
         # The remaining convolutional layers can be normal ones: we know the input size.
         conv_layers.append(nn.Conv1d(in_channels=3, out_channels=6, kernel_size=10, bias=False, padding=9))
-        conv_layers.append(nn.ReLU())
+        conv_layers.append(nn.Sigmoid())
         conv_layers.append(nn.MaxPool1d(kernel_size=2))
 
         conv_layers.append(nn.Conv1d(in_channels=6, out_channels=6, kernel_size=5, bias=False, padding=4))
-        conv_layers.append(nn.ReLU())
+        conv_layers.append(nn.Sigmoid())
         conv_layers.append(nn.MaxPool1d(kernel_size=2))
 
         self.convolutions = nn.Sequential(*conv_layers)
@@ -201,7 +201,8 @@ class OhShuLih(TSFEDL_BaseModule):
         # NOTE2: this LSTM Requires an input with shape (N, L, H_in) where N is the batch size, L is the LENGTH of the sequence
         # and H_in is the number of dimensions. From the convolutional layers we got a shape of (N, H_in, L), so
         # we have to RESHAPE our BEFORE plugging them into the LSTM.
-        self.lstm = nn.LSTM(input_size=6, hidden_size=20, batch_first=True)
+        self.lstm = nn.LSTM(input_size=6, hidden_size=20, batch_first=True) # TODO: línea original
+        # self.lstm = nn.LSTM(input_size=6, hidden_size=128, batch_first=True)
 
 
     def forward(self, x):
@@ -1355,10 +1356,10 @@ class KhanZulfiqar_Classifier(nn.Module):
         self.return_sequence = return_sequence
         self.module = nn.Sequential(
             nn.Linear(in_features, 8),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.Dropout(p=0.5),
             nn.Linear(8, 8),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.Dropout(p=0.5),
             nn.Linear(8, n_classes)
         )
@@ -1418,19 +1419,19 @@ class KhanZulfiqar(TSFEDL_BaseModule):
 
         self.convolutions = nn.Sequential(
             nn.Conv1d(in_channels=in_features, out_channels=3, kernel_size=20, bias=False),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=3, out_channels=6, kernel_size=10, bias=False),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=6, out_channels=6, kernel_size=5, bias=False),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=6, out_channels=6, kernel_size=5, bias=False),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=6, out_channels=6, kernel_size=10, bias=False),
-            nn.ReLU(),
+            nn.Sigmoid(),
             nn.MaxPool1d(kernel_size=2, stride=2)
         )
 
@@ -1623,10 +1624,10 @@ class WangKejun_Classifier(nn.Module):
         self.module = nn.Sequential(
             nn.Flatten(),
             nn.Linear(in_features, 2048),
-            nn.ELU(),
+            nn.Sigmoid(),
             nn.Dropout(p=0.5),
             nn.Linear(2048, 2048),
-            nn.ELU(),
+            nn.Sigmoid(),
             nn.Linear(2048, n_classes)
         )
 
@@ -1685,22 +1686,22 @@ class WangKejun(TSFEDL_BaseModule):
 
         self.convolutions = nn.Sequential(
             nn.Conv1d(in_channels=in_features, out_channels=64, kernel_size=3, stride=1, bias=True, padding="same"),
-            nn.ELU(),
+            nn.Sigmoid(),
             nn.BatchNorm1d(num_features=64),
             nn.Conv1d(in_channels=64, out_channels=64, kernel_size=3, stride=1, bias=True, padding="same"),
-            nn.ELU(),
+            nn.Sigmoid(),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=64, out_channels=128, kernel_size=3, stride=1, bias=True, padding="same"),
-            nn.ELU(),
+            nn.Sigmoid(),
             nn.BatchNorm1d(num_features=128),
             nn.Conv1d(in_channels=128, out_channels=128, kernel_size=3, stride=1, bias=True, padding="same"),
-            nn.ELU(),
+            nn.Sigmoid(),
             nn.MaxPool1d(kernel_size=2, stride=2),
             nn.Conv1d(in_channels=128, out_channels=256, kernel_size=3, stride=1, bias=True, padding="same"),
-            nn.ELU(),
+            nn.Sigmoid(),
             nn.BatchNorm1d(num_features=256),
             nn.Conv1d(in_channels=256, out_channels=256, kernel_size=3, stride=1, bias=True, padding="same"),
-            nn.ELU(),
+            nn.Sigmoid(),
             nn.MaxPool1d(kernel_size=2, stride=2)
         )
 

@@ -23,10 +23,12 @@ import random
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
 import torch
-from PyEMD import EMD
+from torch import nn, optim
+from torch.utils.data import DataLoader
 
 # Seed
 random.seed(42)
@@ -57,7 +59,9 @@ SUBFIX_NAME = 'dae'
 IS_TS = True
 
 # Local libraries
-from models import XAI_benchmark
+from dataset import TensorDataset
+from models import Trainer, XAI_benchmark, DenoisingAutoencoder
+from utils import symmetric_mean_absolute_percentage_error
 
 # Make sure that the GPU is being used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -204,17 +208,99 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Denoise the data using Empirical Mode Decomposition ##
-    ## ------------------------------------------------------------------------------------------ ##
-    # EMD decomposition
-    df_denoised = pd.DataFrame(columns=df_data.columns)
+    ## Declare a Neural Network model and prepare the data to train it ##
+    ## -------------------------------------------------------------------------------------- ##
+    train_dae, test_dae = train_test_split(
+        df_data.values, test_size=0.2, shuffle=False
+    )
 
-    for col in df_data.columns:
-        emd = EMD()
-        imfs = emd(df_data[col].values)
-        # Reconstruction of the signal
-        df_denoised[col] = np.sum(imfs[2:], axis=0)
-    df_denoised = df_denoised.copy()
+    ### 'y' parameter should be the same as 'x' in a normal problem where the original ###
+    ### (no noise/clean) data is not available. ###
+    ## -------------------------------------------------------------------------------------- ##
+    train_dataset = TensorDataset(
+        x=train_dae,
+        y=train_dae
+    )
+    # Transform the data into a tensor
+    val_dataset = TensorDataset(
+        x=test_dae,
+        y=test_dae
+    )
+
+    # Create the dataloaders
+    batch_size = 64
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    # Create Neural Network model
+    model = DenoisingAutoencoder(
+        input_dim=train_dae.shape[1],
+        latent_dim=32,
+    ).to(device)
+
+    # Set model parameters and create the model Trainer object
+    lr = 0.001
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    denoiser_checkpoint_path = os.path.join(
+        CHECKPOINT_PATH,
+        'orig',
+        'dae.pth'
+    )
+
+    # Define the trainer
+    trainer_basic = Trainer(
+        model=model,
+        train_generator=train_dataloader,
+        val_generator=val_dataloader,
+        device=device,
+        criterion=criterion,
+        optimizer=optimizer,
+        epoch_scheduler=None,
+        batch_scheduler=None,
+        patience=15,
+        epochs=500,
+        checkpoints_path=denoiser_checkpoint_path
+    )
+
+    ## Train the Neural Network or load its weights from a checkpoint ##
+    ## ------------------------------------------------------------------------------------------ ##
+    if os.path.exists(denoiser_checkpoint_path) and not FORCE_TRAINING_NN:
+        model.load_state_dict(torch.load(denoiser_checkpoint_path, weights_only=True))
+        if VERBOSE:
+            print(
+                'Checkpoint loaded for the neural network model from path: ',
+                denoiser_checkpoint_path
+            )
+    else:
+        model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
+
+    ## Predict and get the metrics for de NN model ##
+    ## ------------------------------------------------------------------------------------------ ##
+    df_denoised = model(
+        torch.tensor(df_data.values).float().to(device)
+    ).cpu().detach().numpy()
+    df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
+
+    # Show the metrics
+    gt_values = df_data.values
+    predicted_values = df_denoised.values
+    mae = mean_absolute_error(gt_values, predicted_values)
+    smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
+    mse = mean_squared_error(gt_values, predicted_values)
+    rmse = np.sqrt(mse)
+    r_squared = r2_score(gt_values, predicted_values)
+
+    nn_metrics = {
+        'mse': mse,
+        'rmse': rmse,
+        'mae': mae,
+        'smape': smape,
+        'R2': r_squared
+    }
+
+    predictions_dict['orig'][SUBFIX_NAME] = predicted_values
+    metrics_dict['orig'][SUBFIX_NAME] = nn_metrics
 
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
