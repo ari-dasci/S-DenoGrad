@@ -153,11 +153,11 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     no_noise_corr = df_data.corr()
     histogram_no_noise = {}
-    histo_bins_orig = {}
+    histo_bins_no_noise = {}
     for col in df_data.columns:
         hist, bin_edges = np.histogram(df_data[col], bins='auto', density=True)
         histogram_no_noise[col] = hist + 1e-10
-        histo_bins_orig[col] = len(bin_edges) - 1
+        histo_bins_no_noise[col] = len(bin_edges) - 1
 
     ## Add gaussian noise to the data in all variables ##
     ## ------------------------------------------------------------------------------------------ ##
@@ -198,7 +198,7 @@ if __name__ == '__main__':
         ## -------------------------------------------------------------------------------------- ##
         histogram_noisy = {}
         for col in df_noisy.columns:
-            n_bin = histo_bins_orig[col]
+            n_bin = histo_bins_no_noise[col]
             hist, _ = np.histogram(df_noisy[col], bins=n_bin, density=True)
             histogram_noisy[col] = hist + 1e-10
 
@@ -377,7 +377,7 @@ if __name__ == '__main__':
         ## -------------------------------------------------------------------------------------- ##
         histogram_denoised = {}
         for col in df_denoised.columns:
-            n_bin = histo_bins_orig[col]
+            n_bin = histo_bins_no_noise[col]
             hist, _ = np.histogram(df_denoised[col], bins=n_bin, density=True)
             histogram_denoised[col] = hist + 1e-10
 
