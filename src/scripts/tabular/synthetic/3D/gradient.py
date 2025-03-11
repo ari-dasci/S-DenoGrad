@@ -23,7 +23,7 @@ import random
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
 import torch
@@ -56,7 +56,7 @@ FORCE_TRAINING = True
 SUBFIX_NAME = 'gradient'
 
 # Local libraries
-from utils import add_gaussian_noise
+from utils import add_gaussian_noise, symmetric_mean_absolute_percentage_error
 from dataset import TensorDataset
 from models import Trainer, XAI_benchmark, GridFullyDenseNN
 from dlnr import DLNoiseReduction
@@ -336,7 +336,7 @@ if __name__ == '__main__':
         gt_values = y_test_noisy
         predicted_values = y_pred_test
         mae = mean_absolute_error(gt_values, predicted_values)
-        mape = mean_absolute_percentage_error(gt_values, predicted_values)
+        smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
         mse = mean_squared_error(gt_values, predicted_values)
         rmse = np.sqrt(mse)
         r_squared = r2_score(gt_values, predicted_values)
@@ -345,7 +345,7 @@ if __name__ == '__main__':
             'mse': mse,
             'rmse': rmse,
             'mae': mae,
-            'mape': mape,
+            'smape': smape,
             'R2': r_squared
         }
 

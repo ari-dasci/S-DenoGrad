@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
 import torch
@@ -55,7 +55,7 @@ VERBOSE = True
 FORCE_TRAINING = True
 
 # Local libraries
-from utils import add_gaussian_noise
+from utils import add_gaussian_noise, symmetric_mean_absolute_percentage_error
 from dataset import TensorDataset
 from models import Trainer, XAI_benchmark
 
@@ -317,10 +317,10 @@ if __name__ == '__main__':
         df_denoised = pd.DataFrame(df_denoised, columns=['x', 'y'])
 
         # Show the metrics
-        gt_values = df_noisy.values # TODO: df_data.values # Use noisy for real case use.
-        predicted_values = df_denoised
+        gt_values = df_data.values
+        predicted_values = df_denoised.values
         mae = mean_absolute_error(gt_values, predicted_values)
-        mape = mean_absolute_percentage_error(gt_values, predicted_values)
+        smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
         mse = mean_squared_error(gt_values, predicted_values)
         rmse = np.sqrt(mse)
         r_squared = r2_score(gt_values, predicted_values)
@@ -329,7 +329,7 @@ if __name__ == '__main__':
             'mse': mse,
             'rmse': rmse,
             'mae': mae,
-            'mape': mape,
+            'smape': smape,
             'R2': r_squared
         }
 

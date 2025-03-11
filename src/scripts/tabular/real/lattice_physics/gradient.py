@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
 import torch
@@ -60,6 +60,7 @@ SUBFIX_NAME = 'gradient'
 from dataset import TensorDataset
 from models import Trainer, XAI_benchmark, GridFullyDenseNN
 from dlnr import DLNoiseReduction
+from utils import add_gaussian_noise, symmetric_mean_absolute_percentage_error
 
 # Make sure that the GPU is being used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -285,10 +286,10 @@ if __name__ == '__main__':
     ).cpu().detach().numpy()
 
     # Show the metrics
-    gt_values = y_test_orig
+    gt_values = df_data.values
     predicted_values = y_pred_test
     mae = mean_absolute_error(gt_values, predicted_values)
-    mape = mean_absolute_percentage_error(gt_values, predicted_values)
+    smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
     mse = mean_squared_error(gt_values, predicted_values)
     rmse = np.sqrt(mse)
     r_squared = r2_score(gt_values, predicted_values)
@@ -297,10 +298,12 @@ if __name__ == '__main__':
         'mse': mse,
         'rmse': rmse,
         'mae': mae,
-        'mape': mape,
+        'smape': smape,
         'R2': r_squared
     }
 
+    predictions_dict['orig'] = orig_pred
+    metrics_dict['orig'] = orig_metrics
     predictions_dict['orig']['nn'] = y_pred_test
     metrics_dict['orig']['nn'] = nn_metrics
 
