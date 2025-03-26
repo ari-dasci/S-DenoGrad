@@ -325,6 +325,11 @@ class DLNoiseReduction():
 
             epoch += 1
 
+        if epoch >= max_epochs:
+            print(f'Max epochs reached: {epoch/max_epochs}')
+        else:
+            print('Noise threshold reached in all data points.')
+
         return x_tensor, y_tensor
 
 
@@ -450,6 +455,10 @@ class DLNoiseReduction():
                 # print(f'Backward time2: {(prediction_time_end_2 - prediction_time_start_2)*35040}')
                 # print(f'gradient_calc time: {(gradient_calc_time_end - gradient_calc_time_start)*35040}')
                 # print(f'apply_gradient time: {(apply_gradient_time_end - apply_gradient_time_start)*35040}')
+        if epoch >= max_epochs:
+            print(f'Max epochs reached: {epoch/max_epochs}')
+        else:
+            print('Noise threshold reached in all data points.')
 
         return self._x_noisy.X, self._x_noisy.Y
 

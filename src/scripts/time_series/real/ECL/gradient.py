@@ -29,6 +29,7 @@ from scipy.stats import entropy
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+import TSFEDL.models_pytorch as tsfedl
 
 # Seed
 random.seed(42)
@@ -51,19 +52,19 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING_PRE_XAI = True
+FORCE_TRAINING_PRE_XAI = False
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
 SUBFIX_NAME = 'gradient'
 IS_TS = True
+IS_CNN = True
 
 # Local libraries
 from dataset import SlidingWindowDataset
 from models import Trainer, XAI_benchmark, LSTMModel
 from dlnr import DLNoiseReduction
 from utils import symmetric_mean_absolute_percentage_error
-import TSFEDL.models_pytorch as TSFEDL 
 
 # Make sure that the GPU is being used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -118,7 +119,8 @@ if __name__ == '__main__':
     assert not list(columnas_categoricas)
 
 
-    df_data = df_data.iloc[-5000:].copy()
+    # TODO: esta línea estaba por algún motivo?
+    # df_data = df_data.iloc[-5000:].copy()
 
 
     # Desplazar la última columna hacia arriba
@@ -226,14 +228,14 @@ if __name__ == '__main__':
         y_train_nn,
         window_size=window_size,
         future=1,
-        cnn=True
+        cnn=IS_CNN
     )
     val_dataset = SlidingWindowDataset(
         X_test_nn,
         y_test_nn,
         window_size=window_size,
         future=1,
-        cnn=True
+        cnn=IS_CNN
     )
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -242,10 +244,12 @@ if __name__ == '__main__':
     input_size = X_train_nn.shape[1] # Número de variables de entrada
     hidden_size = 128  # Número de neuronas en la capa oculta
     output_size = 1  # Predicción de una variable
-    model = LSTMModel(input_size, hidden_size, output_size).to(device)
-    
-    top_module = nn.Sequential(nn.Linear(in_features=67, out_features=1))
-    model = TSFEDL.CaiWenjuan(
+    # model = LSTMModel(input_size, hidden_size, output_size).to(device)
+    top_module = tsfedl.OhShuLih_Classifier(
+        in_features=20,
+        n_classes=output_size
+    )
+    model = tsfedl.OhShuLih(
         in_features=input_size,
         top_module=top_module,
         loss=nn.MSELoss()
@@ -294,7 +298,7 @@ if __name__ == '__main__':
     #     torch.tensor(X_test_orig).float().to(device)
     # ).cpu().detach().numpy().reshape(-1)
     predictions_test = trainer_basic.eval_dataloader(val_dataloader)
-    y_pred_test = np.array([y.cpu().detach().numpy() for x in predictions_test for y in x])
+    y_pred_test = np.array([y for x in predictions_test for y in x])
 
     # Show the metrics
     gt_values = y_test_nn[window_size:]
@@ -319,17 +323,23 @@ if __name__ == '__main__':
     ## Perform gradient-based denoising method ##
     ## ------------------------------------------------------------------------------------------ ##
     x_sliding = df_data[input_vars].values
-    y_sliding = df_data[['y']]
-    df_to_denoise = SlidingWindowDataset(x_sliding, y_sliding, window_size=window_size, future=1)
+    y_sliding = df_data['y'].values
+    df_to_denoise = SlidingWindowDataset(
+        x_sliding,
+        y_sliding,
+        window_size=window_size,
+        future=1,
+        cnn=IS_CNN
+    )
 
-    dlnr = DLNoiseReduction(model=model, criterion=criterion, is_ts=IS_TS)
-    dlnr.fit(df_to_denoise.copy())
+    dlnr = DLNoiseReduction(model=model, criterion=criterion, is_ts=IS_TS, is_cnn=IS_CNN)
+    dlnr.fit(df_to_denoise)
 
     df_denoised = df_data.copy()
     df_denoised[input_vars], old_y = dlnr.transform(
         nrr=0.05,
         nr_threshold=0.01,
-        max_epochs=200,
+        max_epochs=1000,
         plot_progress=False,
         path_to_save_imgs=None,
         denoise_y=False
@@ -461,8 +471,9 @@ if __name__ == '__main__':
     predictions_dict = dictionary_arrays_to_list(predictions_dict)
 
     # Save predictions
+    cnn_str = 'cnn' if IS_CNN else ''
     with open(
-        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_predictions.json'),
+        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_{cnn_str}_predictions.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(predictions_dict, file, ensure_ascii=False, indent=4)
@@ -471,7 +482,7 @@ if __name__ == '__main__':
 
     # Save metrics
     with open(
-        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_metrics.json'),
+        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_{cnn_str}_metrics.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(metrics_dict, file, ensure_ascii=False, indent=4)

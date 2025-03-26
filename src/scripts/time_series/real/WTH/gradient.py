@@ -29,6 +29,9 @@ from scipy.stats import entropy
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+import torch.nn.functional as F
+import TSFEDL.models_pytorch as tsfedl
+from TSFEDL import TemporalAttentionBlockZhangJin, SpatialAttentionBlockZhangJin, SqueezeAndExcitationModule, RTABlock
 
 # Seed
 random.seed(42)
@@ -51,12 +54,13 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING_PRE_XAI = True
+FORCE_TRAINING_PRE_XAI = False
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
 SUBFIX_NAME = 'gradient'
 IS_TS = True
+IS_CNN = True
 
 # Local libraries
 from dataset import SlidingWindowDataset
@@ -67,6 +71,136 @@ from utils import symmetric_mean_absolute_percentage_error
 # Make sure that the GPU is being used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 assert device.type == "cuda"
+
+
+class WTHModel(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=2):
+        super(WTHModel, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+
+        # Capa convolucional inicial para capturar patrones locales
+        self.conv1 = nn.Conv1d(input_size, hidden_size, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm1d(hidden_size)
+
+        # LSTM bidireccional
+        self.lstm = nn.LSTM(
+            input_size=hidden_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.2
+        )
+
+        # Mecanismo de atención temporal
+        self.attention = nn.Sequential(
+            nn.Linear(hidden_size * 2, hidden_size),
+            nn.Tanh(),
+            nn.Linear(hidden_size, 1)
+        )
+
+        # Capas fully connected con skip connection
+        self.fc1 = nn.Linear(hidden_size * 2, hidden_size)
+        self.dropout = nn.Dropout(0.2)
+        self.fc2 = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        # x shape: (batch, seq_len, features)
+        batch_size, seq_len, features = x.size()
+
+        # Aplicar capa convolucional
+        x = x.transpose(1, 2)  # (batch, features, seq_len)
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = x.transpose(1, 2)  # (batch, seq_len, hidden_size)
+
+        # LSTM bidireccional
+        lstm_out, _ = self.lstm(x)  # (batch, seq_len, hidden_size*2)
+
+        # Mecanismo de atención
+        attention_weights = self.attention(lstm_out)  # (batch, seq_len, 1)
+        attention_weights = F.softmax(attention_weights, dim=1)
+        context = torch.sum(attention_weights * lstm_out, dim=1)  # (batch, hidden_size*2)
+
+        # Capas fully connected con skip connection
+        out = self.fc1(context)
+        out = F.relu(out)
+        out = self.dropout(out)
+        out = self.fc2(out)
+
+        return out
+
+
+class WTHModelTSFEDL(nn.Module):
+    """Neural network model for time series prediction based on TSFEDL.
+
+    This class implements a model that combines various attention mechanisms and 
+    specialized blocks for time series processing:
+
+    - Temporal Attention (Zhang-Jin): To capture temporal dependencies
+    - RTA Block: To process recurrent temporal patterns
+    - Spatial Attention (Zhang-Jin): To identify relationships between features  
+    - Squeeze & Excitation: To recalibrate the importance of each feature
+
+    Args:
+        input_size (int): Number of input features
+        hidden_size (int): Size of hidden layer
+        output_size (int): Number of values to predict
+
+    Attributes:
+        temporal_attention (TemporalAttentionBlockZhangJin): Temporal attention block
+        rta (RTABlock): Recurrent temporal attention block
+        spatial_attention (SpatialAttentionBlockZhangJin): Spatial attention block
+        se (SqueezeAndExcitationModule): Squeeze & excitation module
+        fc (nn.Linear): Final fully connected layer
+    """
+    def __init__(self, input_size, hidden_size, output_size):
+        super(WTHModelTSFEDL, self).__init__()
+
+        # Bloque de atención temporal de Zhang-Jin
+        self.temporal_attention = TemporalAttentionBlockZhangJin()
+
+        # Bloque RTA para capturar patrones temporales
+        self.rta = RTABlock(in_features=input_size, nb_filter=hidden_size, kernel_size=3)
+
+        # Bloque de atención espacial
+        self.spatial_attention = SpatialAttentionBlockZhangJin(
+            in_features=hidden_size, 
+            decrease_ratio=4
+        )
+
+        # Squeeze and Excitation para calibrar características
+        self.se = SqueezeAndExcitationModule(
+            in_features=hidden_size, 
+            dense_units=hidden_size//4
+        )
+
+        # Capa final de predicción
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        # x shape: (batch, seq_len, features)
+        x = x.transpose(1, 2)  # (batch, features, seq_len)
+
+        # Aplicar atención temporal
+        x = self.temporal_attention(x)
+
+        # Aplicar RTA block
+        x = self.rta(x)
+
+        # Aplicar atención espacial
+        x = self.spatial_attention(x)
+
+        # Aplicar SE
+        x = self.se(x)
+        
+        # Global average pooling
+        x = torch.mean(x, dim=2)  # (batch, features)
+
+        # Predicción final
+        x = self.fc(x)
+
+        return x
 
 
 # Functions definition #
@@ -182,8 +316,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True,,
-        rolling_forcast=True
+        get_metrics=True,
+        rolling_forcast=False
     )
     xai_benchmark_orig.save(
         path = os.path.join(CHECKPOINT_PATH, 'orig'),
@@ -205,7 +339,7 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Dmicroffot_stockare a Neural Network model and prepare the data to train it ##
+    ## Declare a Neural Network model and prepare the data to train it ##
     ## ------------------------------------------------------------------------------------------ ##
     # divide the data into train/test datasets
     input_vars = df_data.columns
@@ -220,13 +354,15 @@ if __name__ == '__main__':
         X_train_nn,
         y_train_nn,
         window_size=window_size,
-        future=1
+        future=1,
+        cnn=66702
     )
     val_dataset = SlidingWindowDataset(
         X_test_nn,
         y_test_nn,
         window_size=window_size,
-        future=1
+        future=1,
+        cnn=IS_CNN
     )
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -235,12 +371,22 @@ if __name__ == '__main__':
     input_size = X_train_nn.shape[1] # Número de variables de entrada
     hidden_size = 128  # Número de neuronas en la capa oculta
     output_size = 1  # Predicción de una variable
-    model = LSTMModel(input_size, hidden_size, output_size).to(device)
+    # model = LSTMModel(input_size, hidden_size, output_size).to(device)
+    top_module = tsfedl.OhShuLih_Classifier(
+        in_features=20,
+        n_classes=output_size
+    )
+    model = tsfedl.OhShuLih(
+        in_features=input_size,
+        top_module=top_module,
+        loss=nn.MSELoss()
+    ).to(device)
 
     # Set model parameters and create the model Trainer object
     lr = 0.001
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
     denoiser_checkpoint_path = os.path.join(
         CHECKPOINT_PATH,
         'orig',
@@ -255,7 +401,7 @@ if __name__ == '__main__':
         device=device,
         criterion=criterion,
         optimizer=optimizer,
-        epoch_scheduler=None,
+        epoch_scheduler=scheduler,
         batch_scheduler=None,
         patience=15,
         epochs=500,
@@ -280,7 +426,7 @@ if __name__ == '__main__':
     #     torch.tensor(X_test_orig).float().to(device)
     # ).cpu().detach().numpy().reshape(-1)
     predictions_test = trainer_basic.eval_dataloader(val_dataloader)
-    y_pred_test = np.array([y.cpu().detach().numpy() for x in predictions_test for y in x])
+    y_pred_test = np.array([y for x in predictions_test for y in x])
 
     # Show the metrics
     gt_values = y_test_nn[window_size:]
@@ -306,16 +452,22 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     x_sliding = df_data[input_vars].values
     y_sliding = df_data['y'].values
-    df_to_denoise = SlidingWindowDataset(x_sliding, y_sliding, window_size=window_size, future=1)
+    df_to_denoise = SlidingWindowDataset(
+        x_sliding,
+        y_sliding,
+        window_size=window_size,
+        future=1,
+        cnn=IS_CNN
+    )
 
-    dlnr = DLNoiseReduction(model=model, criterion=criterion, is_ts=IS_TS)
+    dlnr = DLNoiseReduction(model=model, criterion=criterion, is_ts=IS_TS, is_cnn=IS_CNN)
     dlnr.fit(df_to_denoise)
 
     df_denoised = df_data.copy()
     df_denoised[input_vars], old_y = dlnr.transform(
         nrr=0.05,
         nr_threshold=0.01,
-        max_epochs=200,
+        max_epochs=1000,
         plot_progress=False,
         path_to_save_imgs=None,
         denoise_y=False
@@ -381,10 +533,10 @@ if __name__ == '__main__':
     if FORCE_TRAINING_POST_XAI:
         xai_benchmark_denoised.fit(X_train_denoised, y_train_denoised)
     else:
-        xai_benchmark_denoised.load(os.path.join(CHECKPOINT_PATH, 'denoised'))
+        xai_benchmark_denoised.load(os.path.join(CHECKPOINT_PATH, 'denoised', 'gradient'))
 
     xai_benchmark_denoised.save(
-        path = os.path.join(CHECKPOINT_PATH, 'denoised'),
+        path = os.path.join(CHECKPOINT_PATH, 'denoised', 'gradient'),
         subfix = f'{SUBFIX_NAME}_denoised'
     )
 
@@ -393,8 +545,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True,,
-        rolling_forcast=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. Denoised models over original data.
@@ -402,8 +554,8 @@ if __name__ == '__main__':
         X_test,
         y_test,
         n_periods=len(y_test),
-        get_metrics=True,,
-        rolling_forcast=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     # Get the predictions and metrics. orig models over denoised data.
@@ -411,8 +563,8 @@ if __name__ == '__main__':
         X_test_denoised,
         y_test_denoised,
         n_periods=len(y_test_denoised),
-        get_metrics=True,,
-        rolling_forcast=True
+        get_metrics=True,
+        rolling_forcast=False
     )
 
     predictions_dict['denoised'] = {}
@@ -446,8 +598,9 @@ if __name__ == '__main__':
     predictions_dict = dictionary_arrays_to_list(predictions_dict)
 
     # Save predictions
+    cnn_str = 'cnn' if IS_CNN else ''
     with open(
-        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_predictions.json'),
+        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_{cnn_str}_predictions.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(predictions_dict, file, ensure_ascii=False, indent=4)
@@ -456,7 +609,7 @@ if __name__ == '__main__':
 
     # Save metrics
     with open(
-        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_metrics.json'),
+        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_{cnn_str}_metrics.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(metrics_dict, file, ensure_ascii=False, indent=4)

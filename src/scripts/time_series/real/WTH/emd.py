@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
 import torch
@@ -52,7 +52,6 @@ sys.path.append(LIBS_PATH)
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
 FORCE_TRAINING_PRE_XAI = False
-FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
 SUBFIX_NAME = 'emd'

@@ -1,11 +1,14 @@
 #!/bin/bash
 
-JOB_NAME="rt_"
+JOB_NAME=""
 PARTITION="dgx2,dgx"
 
 SCRIPTS=(
-    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/ECL/dae.py"
-    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/ECL/gradient.py"
+    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/daily_climate/gradient.py"
+    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/ECL/gradient.py"
+    "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/ETT/gradient.py"
+    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/microsoft_stock/gradient.py"
+    # "/mnt/homeGPU/JJavierAR/S-noise-gradient/src/scripts/time_series/real/WTH/gradient.py"
 )
 
 for SCRIPT in "${SCRIPTS[@]}"; do
@@ -13,11 +16,12 @@ for SCRIPT in "${SCRIPTS[@]}"; do
     
     cat > "$JOB_SCRIPT" <<EOF
 #!/bin/bash
-#SBATCH --job-name=${JOB_NAME}$(basename $SCRIPT)
+#SBATCH --job-name=${JOB_NAME}/$(basename $(dirname $SCRIPT))/$(basename $SCRIPT)
 #SBATCH --partition=${PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH -o /mnt/homeGPU/JJavierAR/S-noise-gradient/logs/${JOB_NAME}_$(basename $(dirname $SCRIPT)).out
 #SBATCH -e /mnt/homeGPU/JJavierAR/S-noise-gradient/logs/${JOB_NAME}_$(basename $(dirname $SCRIPT)).err
+#SBATCH -c 16
 
 source /opt/anaconda/etc/profile.d/conda.sh
 conda activate /mnt/homeGPU/JJavierAR/repsol_env/

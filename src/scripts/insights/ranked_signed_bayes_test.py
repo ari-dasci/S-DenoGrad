@@ -64,6 +64,7 @@ if __name__ == "__main__":
 
         dod_r2 = {}
         ood_r2 = {}
+        doo_r2 = {}
         for inner_root, inner_dirs, inner_files in os.walk(root):
             # if there are no files continue exploring
             if not inner_files:
@@ -79,6 +80,8 @@ if __name__ == "__main__":
                     dod_r2[method] = []
                 if method not in ood_r2:
                     ood_r2[method] = []
+                if method not in doo_r2:
+                    doo_r2[method] = []
 
                 # Read metrics.
                 metrics_file = os.path.join(inner_root, file)
@@ -96,11 +99,16 @@ if __name__ == "__main__":
                     denoised_current_metrics = current_metrics['denoised']
 
                 dod_current_metrics = denoised_current_metrics['denoised_over_denoised']
+                doo_current_metrics = denoised_current_metrics['denoised_over_orig']
                 ood_current_metrics = denoised_current_metrics[ood_tag]
 
                 if is_tabular:
                     dod_current_r2 = [
                         metrics['R2'] for key, metrics in dod_current_metrics.items()
+                        if key not in ['arima', 'auto_arima']
+                    ]
+                    doo_current_r2 = [
+                        metrics['R2'] for key, metrics in doo_current_metrics.items()
                         if key not in ['arima', 'auto_arima']
                     ]
                     ood_current_r2 = [
@@ -109,33 +117,38 @@ if __name__ == "__main__":
                     ]
                 else:
                     dod_current_r2 = [metrics['R2'] for _, metrics in dod_current_metrics.items()]
+                    doo_current_r2 = [metrics['R2'] for _, metrics in doo_current_metrics.items()]
                     ood_current_r2 = [metrics['R2'] for _, metrics in ood_current_metrics.items()]
 
                 dod_current_r2 = [0 if x is None else x for x in dod_current_r2]
+                doo_current_r2 = [0 if x is None else x for x in doo_current_r2]
                 ood_current_r2 = [0 if x is None else x for x in ood_current_r2]
 
                 # Check not all values are 0.
                 assert any(dod_current_r2)
                 assert any(ood_current_r2)
+                assert any(doo_current_r2)
 
                 # Extend the lists with the new values.
                 dod_r2[method] += dod_current_r2
                 ood_r2[method] += ood_current_r2
-
+                doo_r2[method] += doo_current_r2
 
         # Crear y guardar la gráfica
         # ------------------------------------------------------------------------------------ #
         dod_gradient_r2 = np.array(dod_r2['gradient'])
         ood_gradient_r2 = np.array(ood_r2['gradient'])
-
+        doo_gradient_r2 = np.array(doo_r2['gradient'])
         dod_r2.pop('gradient')
         ood_r2.pop('gradient')
+        doo_r2.pop('gradient')
 
         dod_r2 = {k: np.array(dod_r2[k]) for k in sorted(dod_r2)}
         ood_r2 = {k: np.array(ood_r2[k]) for k in sorted(ood_r2)}
+        doo_r2 = {k: np.array(doo_r2[k]) for k in sorted(doo_r2)}
 
-        for (k1, v1), (k2, v2) in tqdm(zip(dod_r2.items(), ood_r2.items())):
-            assert k1 == k2
+        for (k1, v1), (k2, v2), (k3, v3) in tqdm(zip(dod_r2.items(), ood_r2.items(), doo_r2.items())):
+            assert k1 == k2 == k3
             names = ['Ours', k1]
             bar_width = 0.7
 
@@ -189,5 +202,32 @@ if __name__ == "__main__":
             fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
             make_dir(fig_path)
             fig_path = os.path.join(fig_path, f'gradient_v_{k1}_ood.png')
+            fig.savefig(fig_path, dpi=300, bbox_inches="tight")
+            plt.close()
+
+            # Crear y guardar la gráfica
+            # ------------------------------------------------------------------------------------ #
+            probs, fig = baycomp.two_on_multiple(
+                doo_gradient_r2,
+                v3,
+                rope=0.01,
+                runs=100000,
+                plot=True,
+                names=names
+            )
+
+            path_parts = root.split(os.path.sep)
+            real_or_synthetic = path_parts[-1]
+            tabular_or_ts = path_parts[-2]
+            # Guardar la figura
+            noise_str = ''
+            if not is_real:
+                noise_str = f'_s{noise_lvl}'
+
+            data_str = f'{tabular_or_ts} {real_or_synthetic}{noise_str}'
+
+            fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
+            make_dir(fig_path)
+            fig_path = os.path.join(fig_path, f'gradient_v_{k1}_doo.png')
             fig.savefig(fig_path, dpi=300, bbox_inches="tight")
             plt.close()
