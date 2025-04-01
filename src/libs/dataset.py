@@ -67,7 +67,7 @@ class SlidingWindowDataset(Dataset):
         if self.mode == 'range':
             y = self.Y[idx + self.window_size : idx + self.window_size + self.future]
         elif self.mode == 'discrete':
-            y = np.array([self.Y[idx + self.window_size + i_fut] for i_fut in self.future])
+            y = np.array([self.Y[idx + self.window_size + i_fut -1] for i_fut in self.future])
 
         return [x, y]
 

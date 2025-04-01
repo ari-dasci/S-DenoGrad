@@ -167,3 +167,4 @@ out/
 out_not_valid/
 *.out
 checkpoints/
+checkpoint*

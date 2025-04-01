@@ -58,7 +58,7 @@ FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
 SUBFIX_NAME = 'gradient'
 IS_TS = True
-IS_CNN = True
+IS_CNN = False
 
 # Local libraries
 from dataset import SlidingWindowDataset
@@ -69,6 +69,30 @@ from utils import symmetric_mean_absolute_percentage_error
 # Make sure that the GPU is being used
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 assert device.type == "cuda"
+
+import torch
+import torch.nn as nn
+
+
+class FullyConvTemporalCNN(nn.Module):
+    def __init__(self, input_size, num_filters=32, kernel_size=3, output_size=1):
+        super(FullyConvTemporalCNN, self).__init__()
+        self.conv1 = nn.Conv1d(in_channels=input_size, out_channels=num_filters, kernel_size=kernel_size, padding='same')
+        self.conv2 = nn.Conv1d(in_channels=num_filters, out_channels=num_filters, kernel_size=kernel_size, padding='same')
+        self.conv3 = nn.Conv1d(in_channels=num_filters, out_channels=output_size, kernel_size=1)  # Reduce a 1 feature por canal
+        self.gap = nn.AdaptiveAvgPool1d(1)  # Global Average Pooling
+        
+        self.relu = nn.ReLU()
+        
+    def forward(self, x):
+        x = x.permute(0, 2, 1)  # Conv1D espera (batch, features, time)
+        x = self.relu(self.conv1(x))
+        x = self.relu(self.conv2(x))
+        x = self.conv3(x)  # Reduce los filtros a la salida deseada
+        x = self.gap(x)  # Reduce la dimensión temporal a 1
+        x = x.squeeze(-1)  # Quita la última dimensión innecesaria
+        return x
+
 
 
 # Functions definition #
@@ -239,15 +263,13 @@ if __name__ == '__main__':
     hidden_size = 128  # Número de neuronas en la capa oculta
     output_size = 1  # Predicción de una variable
     # model = LSTMModel(input_size, hidden_size, output_size).to(device)
-    top_module = tsfedl.OhShuLih_Classifier(
-        in_features=20,
-        n_classes=output_size
-    )
-    model = tsfedl.OhShuLih(
-        in_features=input_size,
-        top_module=top_module,
-        loss=nn.MSELoss()
-    ).to(device)
+    # top_module = nn.Sequential(
+    # model = tsfedl.HuangMeiLing(
+    #     in_features=input_size,
+    #     top_module=top_module,
+    #     loss=nn.MSELoss()
+    # ).to(device)
+    model = FullyConvTemporalCNN(input_size, num_filters=32, kernel_size=3, output_size=1).to(device)
 
     # Set model parameters and create the model Trainer object
     lr = 0.001

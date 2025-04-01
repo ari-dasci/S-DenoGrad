@@ -29,6 +29,7 @@ from scipy.stats import entropy
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
+import TSFEDL.models_pytorch as tsfedl
 
 # Seed
 random.seed(42)
@@ -51,22 +52,49 @@ sys.path.append(LIBS_PATH)
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING_PRE_XAI = False
+FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'ma'
+SUBFIX_NAME = 'gradient'
 IS_TS = True
+IS_CNN = False
+
+FUTURE = 1
 
 # Local libraries
 from dataset import SlidingWindowDataset
-from models import Trainer, XAI_benchmark, LSTMModel
+from models import Trainer, XAI_benchmark, LSTMModel, ComplexLSTMModel
 from dlnr import DLNoiseReduction
 from utils import symmetric_mean_absolute_percentage_error
 
 # Make sure that the GPU is being used
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# assert device.type == "cuda"
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+assert device.type == "cuda"
+
+import torch
+import torch.nn as nn
+
+
+class FullyConvTemporalCNN(nn.Module):
+    def __init__(self, input_size, num_filters=32, kernel_size=3, output_size=1):
+        super(FullyConvTemporalCNN, self).__init__()
+        self.conv1 = nn.Conv1d(in_channels=input_size, out_channels=num_filters, kernel_size=kernel_size, padding='same')
+        self.conv2 = nn.Conv1d(in_channels=num_filters, out_channels=num_filters, kernel_size=kernel_size, padding='same')
+        self.conv3 = nn.Conv1d(in_channels=num_filters, out_channels=output_size, kernel_size=1)  # Reduce a 1 feature por canal
+        self.gap = nn.AdaptiveAvgPool1d(1)  # Global Average Pooling
+        
+        self.relu = nn.ReLU()
+        
+    def forward(self, x):
+        x = x.permute(0, 2, 1)  # Conv1D espera (batch, features, time)
+        x = self.relu(self.conv1(x))
+        x = self.relu(self.conv2(x))
+        x = self.conv3(x)  # Reduce los filtros a la salida deseada
+        x = self.gap(x)  # Reduce la dimensión temporal a 1
+        x = x.squeeze(-1)  # Quita la última dimensión innecesaria
+        return x
+
 
 
 # Functions definition #
@@ -117,7 +145,7 @@ if __name__ == '__main__':
     assert not list(columnas_categoricas)
 
     # Desplazar la última columna hacia arriba
-    df_data['y_shifted'] = df_data['y'].shift(-1)
+    df_data['y_shifted'] = df_data['y'].shift(-FUTURE)
     # Eliminar la última fila porque tendrá un NaN en la última columna
     df_data = df_data.dropna().reset_index(drop=True)
     y_shifted = df_data['y_shifted'].copy()
@@ -204,26 +232,109 @@ if __name__ == '__main__':
         histo_bins_orig[col] = len(bin_edges) - 1
 
 
-    ## Perform MA denoising method ##
+    ## Declare a Neural Network model and prepare the data to train it ##
     ## ------------------------------------------------------------------------------------------ ##
-    window_size = 5
-    df_denoised = pd.DataFrame()
-    df_denoised = pd.concat(
-        {col: df_data[col].rolling(window=window_size, min_periods=1).mean() for col in df_data.columns},
-        axis=1
+    # divide the data into train/test datasets
+    input_vars = df_data.columns
+    X_train_nn, X_test_nn, y_train_nn, y_test_nn = train_test_split(
+        df_data[input_vars].values, df_data['y'].values, test_size=0.2, shuffle=False
     )
-    df_denoised = df_denoised.copy()
 
-    # Calc the metrics
-    gt_values = df_data.values
-    predicted_values = df_denoised.values
+    # Create the dataloaders
+    batch_size = 64
+    window_size = 30
+    train_dataset = SlidingWindowDataset(
+        X_train_nn,
+        y_train_nn,
+        window_size=window_size,
+        mode='discrete',
+        future=[FUTURE],
+        cnn=IS_CNN
+    )
+    val_dataset = SlidingWindowDataset(
+        X_test_nn,
+        y_test_nn,
+        window_size=window_size,
+        mode='discrete',
+        future=[FUTURE],
+        cnn=IS_CNN
+    )
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    # Create Neural Network model
+    input_size = X_train_nn.shape[1] # Número de variables de entrada
+    hidden_size = 128  # Número de neuronas en la capa oculta
+    output_size = 1  # Predicción de una variable
+    model = ComplexLSTMModel(
+        input_size=input_size,
+        hidden_size=hidden_size,
+        dropout=0.1,
+        output_size=output_size
+    ).to(device)
+    # top_module = nn.Sequential(
+    # model = tsfedl.HuangMeiLing(
+    #     in_features=input_size,
+    #     top_module=top_module,
+    #     loss=nn.MSELoss()
+    # ).to(device)
+    # model = FullyConvTemporalCNN(input_size, num_filters=32, kernel_size=3, output_size=1).to(device)
+
+    # Set model parameters and create the model Trainer object
+    lr = 0.001
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    denoiser_checkpoint_path = os.path.join(
+        CHECKPOINT_PATH,
+        'orig',
+        'nn_orig.pth'
+    )
+
+    # Define the trainer
+    trainer_basic = Trainer(
+        model=model,
+        train_generator=train_dataloader,
+        val_generator=val_dataloader,
+        device=device,
+        criterion=criterion,
+        optimizer=optimizer,
+        epoch_scheduler=None,
+        batch_scheduler=None,
+        patience=15,
+        epochs=500,
+        checkpoints_path=denoiser_checkpoint_path
+    )
+
+    ## Train the Neural Network or load its weights from a checkpoint ##
+    ## ------------------------------------------------------------------------------------------ ##
+    if os.path.exists(denoiser_checkpoint_path) and not FORCE_TRAINING_NN:
+        model.load_state_dict(torch.load(denoiser_checkpoint_path, weights_only=True))
+        if VERBOSE:
+            print(
+                'Checkpoint loaded for the neural network model from path: ',
+                denoiser_checkpoint_path
+            )
+    else:
+        model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
+
+    ## Predict and get the metrics for de NN model ##
+    ## ------------------------------------------------------------------------------------------ ##
+    # y_pred_test = model(
+    #     torch.tensor(X_test_orig).float().to(device)
+    # ).cpu().detach().numpy().reshape(-1)
+    predictions_test = trainer_basic.eval_dataloader(val_dataloader)
+    y_pred_test = np.array([y for x in predictions_test for y in x])
+
+    # Show the metrics
+    gt_values = y_test_nn[window_size + FUTURE -1:]
+    predicted_values = y_pred_test
     mae = mean_absolute_error(gt_values, predicted_values)
     smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
     mse = mean_squared_error(gt_values, predicted_values)
     rmse = np.sqrt(mse)
     r_squared = r2_score(gt_values, predicted_values)
 
-    denoised_metrics = {
+    nn_metrics = {
         'mse': mse,
         'rmse': rmse,
         'mae': mae,
@@ -231,12 +342,51 @@ if __name__ == '__main__':
         'R2': r_squared
     }
 
-    predictions_dict['orig'][SUBFIX_NAME] = predicted_values
-    metrics_dict['orig'][SUBFIX_NAME] = denoised_metrics
+    predictions_dict['orig']['nn'] = predicted_values
+    metrics_dict['orig']['nn'] = nn_metrics
+
+    ## Perform gradient-based denoising method ##
+    ## ------------------------------------------------------------------------------------------ ##
+    x_sliding = df_data[input_vars].values
+    y_sliding = df_data['y'].values
+    df_to_denoise = SlidingWindowDataset(
+        x_sliding,
+        y_sliding,
+        window_size=window_size,
+        mode='discrete',
+        future=[FUTURE],
+        cnn=IS_CNN
+    )
+
+    dlnr = DLNoiseReduction(model=model, criterion=criterion, is_ts=IS_TS, is_cnn=IS_CNN)
+    dlnr.fit(df_to_denoise)
+
+    df_denoised = df_data.copy()
+    df_denoised[input_vars], old_y = dlnr.transform(
+        nrr=0.05,
+        nr_threshold=0.01,
+        max_epochs=1000,
+        plot_progress=False,
+        path_to_save_imgs=None,
+        denoise_y=False
+    )
+
+    # complete_dataset = SlidingWindowDataset(
+    #     df_denoised,
+    #     df_denoised['y'],
+    #     window_size=window_size,
+    # mode='discrete',
+    #     future=1
+    # )
+    # complete_dataloader = DataLoader(complete_dataset, batch_size=batch_size, shuffle=False)
+    # y_new = trainer_basic.eval_dataloader(complete_dataloader)
+    # y_new = np.array([y.cpu().detach().numpy() for x in y_new for y in x])
+    # df_denoised = df_denoised.iloc[window_size:]
+    # df_denoised['y'] = y_new.astype(float)
 
     denoised_corr = df_denoised.corr()
     # Desplazar la última columna hacia arriba
-    df_denoised['y_shifted'] = df_denoised['y'].shift(-1)
+    df_denoised['y_shifted'] = df_denoised['y'].shift(-FUTURE)
     # Eliminar la última fila porque tendrá un NaN en la última columna
     df_denoised = df_denoised.dropna().reset_index(drop=True)
     y_denoised_shifted = df_denoised['y_shifted'].copy()
@@ -271,7 +421,7 @@ if __name__ == '__main__':
     #         'order': order,
     #         'seasonal_order': seasonal_order
     #     },
-    #     arima': {
+    #     'arima': {
     #         'order': (7, 0, 0),
     #         'seasonal_order': (0, 0, 1, 30)
     #     }
@@ -286,10 +436,10 @@ if __name__ == '__main__':
     if FORCE_TRAINING_POST_XAI:
         xai_benchmark_denoised.fit(X_train_denoised, y_train_denoised)
     else:
-        xai_benchmark_denoised.load(os.path.join(CHECKPOINT_PATH, 'denoised'))
+        xai_benchmark_denoised.load(os.path.join(CHECKPOINT_PATH, 'denoised', 'gradient'))
 
     xai_benchmark_denoised.save(
-        path = os.path.join(CHECKPOINT_PATH, 'denoised'),
+        path = os.path.join(CHECKPOINT_PATH, 'denoised', 'gradient'),
         subfix = f'{SUBFIX_NAME}_denoised'
     )
 
@@ -348,8 +498,9 @@ if __name__ == '__main__':
     predictions_dict = dictionary_arrays_to_list(predictions_dict)
 
     # Save predictions
+    cnn_str = 'cnn' if IS_CNN else ''
     with open(
-        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_predictions.json'),
+        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_{cnn_str}_{FUTURE}_predictions.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(predictions_dict, file, ensure_ascii=False, indent=4)
@@ -358,7 +509,7 @@ if __name__ == '__main__':
 
     # Save metrics
     with open(
-        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_metrics.json'),
+        os.path.join(OUT_PATH, f'{SUBFIX_NAME}_{cnn_str}_{FUTURE}_metrics.json'),
         'w',
         encoding='utf-8') as file:
         json.dump(metrics_dict, file, ensure_ascii=False, indent=4)

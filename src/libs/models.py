@@ -33,6 +33,7 @@ import copy
 import pickle
 import torch
 from torch import nn
+import pytorch_lightning as pl
 import numpy as np
 from tqdm import tqdm
 from sklearn.metrics import mean_squared_error, r2_score
@@ -44,12 +45,11 @@ from sklearn.cross_decomposition import PLSRegression   # Partial least squares 
 from sklearn.tree import DecisionTreeRegressor          # Decision tree regression
 from sklearn.svm import SVR                             # Linear support vector regression
 from sklearn.neighbors import KNeighborsRegressor       # K-neighbors regression
-from pmdarima import ARIMA                              # ARIMA
-from pmdarima import auto_arima                         # Auto ARIMA
+from statsmodels.tsa.arima_model import ARIMA           # ARIMA
 
 # Locals
-from config import Colors
-from utils import *
+from src.libs.config import Colors
+from src.libs.utils import *
 
 
 # Classes
@@ -311,6 +311,52 @@ class LSTMModel(nn.Module):
         # Paso a través de la capa totalmente conectada
         out = self.fc(out[:, -1, :])  # Solo queremos la salida del último timestep
         return out
+
+
+class ComplexLSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size, dropout, output_size):
+        super(ComplexLSTMModel, self).__init__()
+
+        # Primera capa LSTM bidireccional
+        self.lstm1 = nn.LSTM(input_size, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
+        self.bn1 = nn.BatchNorm1d(hidden_size * 2)
+
+        # Segunda capa LSTM bidireccional
+        self.lstm2 = nn.LSTM(hidden_size * 2, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
+        self.bn2 = nn.BatchNorm1d(hidden_size * 2)
+
+        # Tercera capa LSTM bidireccional
+        self.lstm3 = nn.LSTM(hidden_size * 2, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
+        self.bn3 = nn.BatchNorm1d(hidden_size * 2)
+
+        # Dropout
+        self.dropout = nn.Dropout(dropout)
+
+        # Capa fully connected final
+        self.fc = nn.Linear(hidden_size * 2, output_size)
+
+    def forward(self, x):
+        batch_size = x.size(0)
+
+        # LSTM 1
+        x, _ = self.lstm1(x)
+        x = self.bn1(x[:, -1, :])  # Normalización sobre la última salida de la secuencia
+
+        # LSTM 2
+        x = x.unsqueeze(1)  # Añadir dimensión para batch_norm
+        x, _ = self.lstm2(x)
+        x = self.bn2(x[:, -1, :])
+
+        # LSTM 3
+        x = x.unsqueeze(1)
+        x, _ = self.lstm3(x)
+        x = self.bn3(x[:, -1, :])
+
+        # Dropout y capa final
+        x = self.dropout(x)
+        x = self.fc(x)
+
+        return x
 
 
 class DenoisingAutoencoder(nn.Module):
@@ -736,6 +782,108 @@ class Trainer:
             predictions.append(self.best_model(batch_x).cpu().detach().numpy())
 
         return predictions
+    
+# Trainer using PyTorch Lightning
+# ---------------------------------------------------------------------------- #
+
+class LightningTrainer(pl.LightningModule):
+    """
+    Trainer class using PyTorch Lightning.
+    """
+    def __init__(self, model, criterion, optimizer, epoch_scheduler=None, batch_scheduler=None):
+        """
+        Initializes the LightningTrainer object.
+
+        Args:
+            model (nn.Module): The neural network model to be trained.
+            criterion (torch.nn.Module): The loss function.
+            optimizer (torch.optim.Optimizer): The optimizer for updating model parameters.
+            epoch_scheduler (torch.optim.lr_scheduler._LRScheduler, optional): The learning rate
+                scheduler based on epochs.
+            batch_scheduler (torch.optim.lr_scheduler._LRScheduler, optional): The learning rate
+                scheduler based on batches.
+        """
+        super(LightningTrainer, self).__init__()
+        self.model = model
+        self.criterion = criterion
+        self.optimizer = optimizer
+        self.epoch_scheduler = epoch_scheduler
+        self.batch_scheduler = batch_scheduler
+
+    def forward(self, x):
+        """
+        Forward pass of the model.
+
+        Args:
+            x (torch.Tensor): Input data.
+
+        Returns:
+            torch.Tensor: Model output.
+        """
+        return self.model(x)
+
+    def training_step(self, batch, batch_idx):
+        """
+        Training step for a single batch.
+
+        Args:
+            batch (tuple): A tuple containing input data and target labels.
+            batch_idx (int): Index of the batch.
+
+        Returns:
+            torch.Tensor: Training loss.
+        """
+        batch_x, batch_y = batch
+        outputs = self(batch_x)
+        if len(outputs.shape) < len(batch_y.shape):
+            outputs = outputs.unsqueeze(1)
+        loss = self.criterion(outputs, batch_y)
+        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        """
+        Validation step for a single batch.
+
+        Args:
+            batch (tuple): A tuple containing input data and target labels.
+            batch_idx (int): Index of the batch.
+
+        Returns:
+            torch.Tensor: Validation loss.
+        """
+        batch_x, batch_y = batch
+        outputs = self(batch_x)
+        if len(outputs.shape) < len(batch_y.shape):
+            outputs = outputs.unsqueeze(1)
+        val_loss = self.criterion(outputs, batch_y)
+        self.log("val_loss", val_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        return val_loss
+
+    def configure_optimizers(self):
+        """
+        Configures the optimizer and learning rate schedulers.
+
+        Returns:
+            dict: Dictionary containing optimizer and schedulers.
+        """
+        optimizers = [self.optimizer]
+        schedulers = []
+
+        if self.epoch_scheduler:
+            schedulers.append({
+                'scheduler': self.epoch_scheduler,
+                'interval': 'epoch',
+                'monitor': 'val_loss'
+            })
+
+        if self.batch_scheduler:
+            schedulers.append({
+                'scheduler': self.batch_scheduler,
+                'interval': 'step'
+            })
+
+        return {"optimizer": optimizers, "lr_scheduler": schedulers}
 
 
 class XAI_benchmark:
@@ -768,10 +916,11 @@ class XAI_benchmark:
             self.knn = None
         if self.is_ts:
             if model_params['auto_arima']:
-                if self.verbose:
-                    print(f'Fitting Auto-ARIMA model...')
-                self.auto_arima = auto_arima(**model_params['auto_arima'])
-                print(self.auto_arima.summary())
+                raise ValueError('Auto-ARIMA model is no longer supported. Use ARIMA instead.')
+                # if self.verbose:
+                #     print('Fitting Auto-ARIMA model...')
+                # self.auto_arima = auto_arima(**model_params['auto_arima'])
+                # print(self.auto_arima.summary())
             else:
                 self.auto_arima = None
             if model_params['arima']:

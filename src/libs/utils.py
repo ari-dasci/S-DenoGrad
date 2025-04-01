@@ -43,7 +43,7 @@ from ipywidgets import widgets
 from torch.utils.data import DataLoader
 from typing import List
 # Locals
-from dataset import SlidingWindowDataset
+from src.libs.dataset import SlidingWindowDataset
 
 
 # EDA Functions
