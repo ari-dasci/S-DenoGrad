@@ -68,10 +68,11 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from scipy.stats import entropy
 
 # Local imports
-from src.libs.utils import add_gaussian_noise
+from src.libs.utils import add_gaussian_noise, symmetric_mean_absolute_percentage_error
 from src.libs.xai_benchmark import XAIBenchmark
 
 # Seed
@@ -126,7 +127,7 @@ class BaseExperiment:
     def __init__(self, data_path: str, out_path: str, checkpoint_path: str, subfix_name: str,
                  is_cnn: bool = False, train_original_xai: bool = False,
                  train_noisy_xai: bool = False, train_denoised_xai: bool = False,
-                 train_denoising_method: bool = False) -> None:
+                 train_denoising_method: bool = False, verbose: bool = True) -> None:
 
         # Paths and names
         self.data_path = data_path
@@ -137,6 +138,7 @@ class BaseExperiment:
         # Boolean flags
         self.is_ts = None
         self.is_cnn = is_cnn
+        self.verbose = verbose
         self.should_train_original_xai = train_original_xai
         self.should_train_noisy_xai = train_noisy_xai
         self.should_train_denoised_xai = train_denoised_xai
@@ -183,8 +185,9 @@ class BaseExperiment:
             std=sigma
         )
 
-    def _perform_xai_benchmark(self, model_params: dict, data_dict: dict, checkpoint_folder: str,
-                               should_train: bool, subfix: str, verbose: bool = True) -> None:
+    def _perform_xai_benchmark(self, model_params: dict, train_data_dict: dict,
+                               test_data_dict: dict, checkpoint_folder: str, should_train: bool,
+                               subfix: str) -> None:
         """
         Perform the XAI (Explainable AI) benchmark for a given model and dataset.
         This method evaluates the performance of a model using an XAI benchmark, 
@@ -200,26 +203,24 @@ class BaseExperiment:
             should_train (bool): Flag indicating whether to train the model on the provided data.
             subfix (str): A suffix to identify the specific benchmark run in the saved files and
                 metrics.
-            verbose (bool, optional): If True, enables verbose output during the benchmark process.
-                Defaults to True.
         Returns:
             None
         """
         xai_benchmark = XAIBenchmark(
             is_ts = self.is_ts,
             model_params = model_params,
-            verbose = verbose
+            verbose = self.verbose
         )
 
         if should_train:
-            xai_benchmark.fit(data_dict['x_train'], data_dict['y_train'])
+            xai_benchmark.fit(train_data_dict['x_train'], train_data_dict['y_train'])
         else:
             xai_benchmark.load(os.path.join(self.checkpoint_path, 'xai', checkpoint_folder))
 
         predictions, metrics = xai_benchmark.predict(
-            data_dict['x_test'],
-            data_dict['y_test'],
-            n_periods=len(data_dict['y_test']),
+            test_data_dict['x_test'],
+            test_data_dict['y_test'],
+            n_periods=len(test_data_dict['y_test']),
             get_metrics=True
         )
 
@@ -231,10 +232,17 @@ class BaseExperiment:
             self.metrics_dict['XAI'] = {}
             self.predictions_dict['XAI'] = {}
 
-        self.metrics_dict['XAI'][subfix] = metrics
-        self.predictions_dict['XAI'][subfix] = predictions
+        if subfix not in self.metrics_dict['XAI']:
+            self.metrics_dict['XAI'][subfix] = {}
+            self.predictions_dict['XAI'][subfix] = {}
 
-    def perform_original_xai_benchmark(self, model_params: dict, verbose: bool = True) -> None:
+        aux1 = f"train_{train_data_dict['df'].name}_test_{test_data_dict['df'].name}"
+        aux2 = f"train_{train_data_dict['df'].name}_test_{test_data_dict['df'].name}"
+
+        self.metrics_dict['XAI'][subfix][aux1] = metrics
+        self.predictions_dict['XAI'][subfix][aux2] = predictions
+
+    def perform_original_xai_benchmark(self, model_params: dict) -> None:
         """
         Executes the original Explainable AI (XAI) benchmark for the given model parameters.
         This method performs the XAI benchmark using the original dataset and saves the results
@@ -242,21 +250,37 @@ class BaseExperiment:
         Args:
             model_params (dict): A dictionary containing the parameters for the model
                 to be evaluated.
-            verbose (bool, optional): If True, enables verbose output during the benchmark process. 
-                                      Defaults to True.
         Returns:
             None
         """
         self._perform_xai_benchmark(
             model_params=model_params,
-            data_dict=self.original_data,
+            train_data_dict=self.original_data,
+            test_data_dict=self.original_data,
             checkpoint_folder='orig',
             should_train=self.should_train_original_xai,
-            subfix='orig',
-            verbose=verbose
+            subfix='orig'
         )
 
-    def perform_noisy_xai_benchmark(self, model_params: dict, verbose: bool = True) -> None:
+        self._perform_xai_benchmark(
+            model_params=model_params,
+            train_data_dict=self.original_data,
+            test_data_dict=self.noisy_data,
+            checkpoint_folder='orig',
+            should_train=self.should_train_original_xai,
+            subfix='orig'
+        )
+
+        self._perform_xai_benchmark(
+            model_params=model_params,
+            train_data_dict=self.original_data,
+            test_data_dict=self.denoised_data,
+            checkpoint_folder='orig',
+            should_train=self.should_train_original_xai,
+            subfix='orig'
+        )
+
+    def perform_noisy_xai_benchmark(self, model_params: dict) -> None:
         """
         Executes the XAI (Explainable Artificial Intelligence) benchmark on noisy data.
         This method performs an XAI benchmark using the provided model parameters and 
@@ -265,21 +289,39 @@ class BaseExperiment:
         Args:
             model_params (dict): A dictionary containing the parameters for the model 
                 to be used in the benchmark.
-            verbose (bool, optional): If True, enables verbose output during the 
-                benchmark process. Defaults to True.
         Returns:
             None
         """
+        if 'df' in self.original_data:
+            if self.original_data['df'] is not None:
+                self._perform_xai_benchmark(
+                    model_params=model_params,
+                    train_data_dict=self.noisy_data,
+                    test_data_dict=self.original_data,
+                    checkpoint_folder='noisy',
+                    should_train=self.should_train_noisy_xai,
+                    subfix='noisy'
+                )
+
         self._perform_xai_benchmark(
             model_params=model_params,
-            data_dict=self.noisy_data,
+            train_data_dict=self.noisy_data,
+            test_data_dict=self.noisy_data,
             checkpoint_folder='noisy',
             should_train=self.should_train_noisy_xai,
-            subfix='noisy',
-            verbose=verbose
+            subfix='noisy'
         )
 
-    def perform_denoised_xai_benchmark(self, model_params: dict, verbose: bool = True) -> None:
+        self._perform_xai_benchmark(
+            model_params=model_params,
+            train_data_dict=self.noisy_data,
+            test_data_dict=self.denoised_data,
+            checkpoint_folder='noisy',
+            should_train=self.should_train_noisy_xai,
+            subfix='noisy'
+        )
+
+    def perform_denoised_xai_benchmark(self, model_params: dict) -> None:
         """
         Executes the XAI (Explainable Artificial Intelligence) benchmark on denoised data.
         This method performs an XAI benchmark using the provided model parameters and 
@@ -288,18 +330,36 @@ class BaseExperiment:
         Args:
             model_params (dict): A dictionary containing the parameters for the model 
                 to be used in the benchmark.
-            verbose (bool, optional): If True, enables verbose output during the 
-                benchmark process. Defaults to True.
         Returns:
             None
         """
+        if 'df' in self.original_data:
+            if self.original_data['df'] is not None:
+                self._perform_xai_benchmark(
+                    model_params=model_params,
+                    train_data_dict=self.denoised_data,
+                    test_data_dict=self.original_data,
+                    checkpoint_folder='denoised',
+                    should_train=self.should_train_denoised_xai,
+                    subfix='denoised'
+                )
+
         self._perform_xai_benchmark(
             model_params=model_params,
-            data_dict=self.denoised_data,
+            train_data_dict=self.denoised_data,
+            test_data_dict=self.noisy_data,
             checkpoint_folder='denoised',
             should_train=self.should_train_denoised_xai,
-            subfix='denoised',
-            verbose=verbose
+            subfix='denoised'
+        )
+
+        self._perform_xai_benchmark(
+            model_params=model_params,
+            train_data_dict=self.denoised_data,
+            test_data_dict=self.denoised_data,
+            checkpoint_folder='denoised',
+            should_train=self.should_train_denoised_xai,
+            subfix='denoised'
         )
 
     def perform_denoising(self, denoise_method: callable, **kwargs):
@@ -314,28 +374,69 @@ class BaseExperiment:
         if not callable(denoise_method):
             raise ValueError("The denoise_method must be a callable function or object.")
 
+        self.metrics_dict['denoising'] = {}
+        self.metrics_dict['denoising']['fitting'] = None
+
         # Apply the denoising method to the noisy data
         denoising_result = denoise_method(self.noisy_data, **kwargs)
         if isinstance(denoising_result, tuple) and len(denoising_result) == 2:
             denoised_data, possible_metrics = denoising_result
             self.denoised_data['df'] = denoised_data
-            self.metrics_dict['denoising'] = possible_metrics
+            self.metrics_dict['denoising']['fitting'] = possible_metrics
         else:
             self.denoised_data['df'] = denoising_result
 
-        # Split the denoised data into train/test sets
-        input_vars = self.noisy_data['df'].columns
-        x_train, x_test, y_train, y_test = train_test_split(
-            self.denoised_data['df'][input_vars].values,
-            self.denoised_data['df']['y'],
-            test_size=0.2,
-            shuffle=False
+        self.denoised_data['df'] = pd.DataFrame(
+            self.denoised_data['df'],
+            columns=self.noisy_data['df'].columns
         )
+        self.denoised_data['df'].name = 'denoised'
+
+        if self.is_ts:
+            # Shift the target variable to create a new column
+            self.denoised_data['df']['y_shifted'] = self.denoised_data['df']['y'].shift(-1)
+            # Drop the last row with NaN value
+            self.denoised_data['df'] = self.denoised_data['df'].dropna().reset_index(drop=True)
+            y_shifted = self.denoised_data['df']['y_shifted'].copy()
+            self.denoised_data['df'] = self.denoised_data['df'].drop(columns=['y_shifted'])
+
+            # divide the data into train/test datasets
+            input_vars = self.denoised_data['df'].columns
+            x_train, x_test, y_train, y_test = train_test_split(
+                self.denoised_data['df'][input_vars].values, y_shifted, test_size=0.2, shuffle=False
+            )
+        else:
+            # divide the data into train/test datasets
+            input_vars = list(set(self.denoised_data['df'].columns) - set(['y']))
+            x_train, x_test, y_train, y_test = train_test_split(
+                self.denoised_data['df'][input_vars].values,
+                self.denoised_data['df']['y'].values,
+                test_size=0.2,
+                random_state=42
+            )
 
         self.denoised_data['x_train'] = x_train
         self.denoised_data['x_test'] = x_test
         self.denoised_data['y_train'] = y_train
         self.denoised_data['y_test'] = y_test
+
+        gt_values = self.noisy_data['df'].values
+        predicted_values = self.denoised_data['df'].values
+        mae = mean_absolute_error(gt_values, predicted_values)
+        smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
+        mse = mean_squared_error(gt_values, predicted_values)
+        rmse = np.sqrt(mse)
+        r_squared = r2_score(gt_values, predicted_values)
+
+        data_comparison_metrics = {
+            'mse': mse,
+            'rmse': rmse,
+            'mae': mae,
+            'smape': smape,
+            'R2': r_squared
+        }
+
+        self.metrics_dict['denoising']['datasets_comparison'] = data_comparison_metrics
 
     def _calc_histograms(self) -> None:
         """
@@ -602,6 +703,19 @@ class BaseExperiment:
         self.predictions_dict = self.dictionary_arrays_to_list(self.predictions_dict)
         self.metrics_dict = self.dictionary_arrays_to_list(self.metrics_dict)
 
+        # Create output directory if it doesn't exist
+        denoised_data_path = os.path.join(self.data_path, 'denoised')
+        if not os.path.exists(denoised_data_path):
+            os.makedirs(denoised_data_path)
+
+        if not os.path.exists(self.out_path):
+            os.makedirs(self.out_path)
+
+        self.denoised_data['df'].to_parquet(
+            os.path.join(denoised_data_path, f'{self.subfix_name}_denoised.parquet'),
+            index=False
+        )
+
         cnn_str = 'cnn_' if self.is_cnn else ''
         # Save predictions
         with open(
@@ -720,11 +834,11 @@ class TSExperiment(BaseExperiment):
     def __init__(self, data_path: str, out_path: str, checkpoint_path: str, subfix_name: str,
                  is_cnn: bool = False, train_original_xai: bool = False,
                  train_noisy_xai: bool = False, train_denoised_xai: bool = False,
-                 train_denoising_method: bool = False) -> None:
+                 train_denoising_method: bool = False, verbose: bool = True) -> None:
 
         super().__init__(data_path, out_path, checkpoint_path, subfix_name, is_cnn,
                          train_original_xai, train_noisy_xai, train_denoised_xai,
-                         train_denoising_method)
+                         train_denoising_method, verbose)
         self.is_ts = True
 
     def load_data(self, data_file: str, y_col_name: str) -> tuple:
@@ -764,9 +878,9 @@ class TSExperiment(BaseExperiment):
         scaler = StandardScaler()
         df_data = pd.DataFrame(scaler.fit_transform(df_data.values), columns=df_data.columns)
 
-        # Desplazar la última columna hacia arriba
+        # shift the target variable to create a new column
         df_data['y_shifted'] = df_data['y'].shift(-1)
-        # Eliminar la última fila porque tendrá un NaN en la última columna
+        # drop the last row with NaN value
         df_data = df_data.dropna().reset_index(drop=True)
         y_shifted = df_data['y_shifted'].copy()
         df_data = df_data.drop(columns=['y_shifted'])
@@ -777,11 +891,21 @@ class TSExperiment(BaseExperiment):
             df_data[input_vars].values, y_shifted, test_size=0.2, shuffle=False
         )
 
-        self.original_data['df'] = df_data
-        self.original_data['x_train'] = x_train
-        self.original_data['x_test'] = x_test
-        self.original_data['y_train'] = y_train
-        self.original_data['y_test'] = y_test
+        synthetic = 'synthetic' in data_file
+        if synthetic:
+            self.original_data['df'] = df_data
+            self.original_data['x_train'] = x_train
+            self.original_data['x_test'] = x_test
+            self.original_data['y_train'] = y_train
+            self.original_data['y_test'] = y_test
+            self.original_data['df'].name = "original"
+        else:
+            self.noisy_data['df'] = df_data
+            self.noisy_data['x_train'] = x_train
+            self.noisy_data['x_test'] = x_test
+            self.noisy_data['y_train'] = y_train
+            self.noisy_data['y_test'] = y_test
+            self.noisy_data['df'].name = "noisy"
 
         return df_data, x_train, x_test, y_train, y_test
 
@@ -809,10 +933,10 @@ class TabularExperiment(BaseExperiment):
     def __init__(self, data_path: str, out_path: str, checkpoint_path: str, subfix_name: str,
                  is_cnn: bool = False, train_original_xai: bool = False,
                  train_noisy_xai: bool = False, train_denoised_xai: bool = False,
-                 train_denoising_method: bool = False) -> None:
+                 train_denoising_method: bool = False, verbose: bool = True) -> None:
         super().__init__(data_path, out_path, checkpoint_path, subfix_name, is_cnn,
                          train_original_xai, train_noisy_xai, train_denoised_xai,
-                         train_denoising_method)
+                         train_denoising_method, verbose)
         self.is_ts = False
 
     def load_data(self, data_file: str, y_col_name: str = '') -> tuple:
@@ -866,11 +990,13 @@ class TabularExperiment(BaseExperiment):
             self.original_data['x_test'] = x_test
             self.original_data['y_train'] = y_train
             self.original_data['y_test'] = y_test
+            self.original_data['df'].name = "original"
         else:
             self.noisy_data['df'] = df_data
             self.noisy_data['x_train'] = x_train
             self.noisy_data['x_test'] = x_test
             self.noisy_data['y_train'] = y_train
             self.noisy_data['y_test'] = y_test
+            self.noisy_data['df'].name = "noisy"
 
         return df_data, x_train, x_test, y_train, y_test

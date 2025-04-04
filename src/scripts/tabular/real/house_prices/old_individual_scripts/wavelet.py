@@ -28,9 +28,7 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import train_test_split
 from scipy.stats import entropy
 import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
-from filterpy.kalman import KalmanFilter
+import pywt
 
 # Seed
 random.seed(42)
@@ -55,7 +53,7 @@ VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
 FORCE_TRAINING = True
 # Name of this experiment that will appear in the result files.
-SUBFIX_NAME = 'kalman'
+SUBFIX_NAME = 'wave'
 
 # Local libraries
 from models import XAI_benchmark
@@ -164,35 +162,28 @@ if __name__ == '__main__':
         df_data[input_vars].values, df_data['y'].values, test_size=0.2, random_state=42
     )
 
-    ## Denoise the data using Kalman Filter ##
+    ## Denoise the data using Wavelet Transform decomposition ##
     ## ------------------------------------------------------------------------------------------ ##
-    filtered_signal = []
-    # Inicialización del Filtro de Kalman
-    F = 1  # Matriz de transición (1D, sin dinámica compleja)
-    H = 1  # Matriz de observación
-    Q = 0.01  # Varianza del ruido del proceso
-    R = 0.01  # Varianza del ruido de medición
-    x = 0  # Estado inicial
-    P = 1  # Varianza inicial
+    # Configuración
+    wavelet = 'db4'  # Wavelet Daubechies 4
+    df_denoised = pd.DataFrame(columns=df_data.columns)
+    for col in df_data.columns:
+        # Decompose the signal
+        coeffs = pywt.wavedec(df_data[col], wavelet, mode='smooth')
 
-    # Filtro de Kalman
-    for z in df_data.values:
-        # Predicción
-        x_pred = F * x
-        P_pred = F * P * F + Q
+        # Delete the coefficients below a threshold
+        ## Sigma is not supposed to be known, but we can estimate it
+        epsilon = 1e-10
+        sigma_for_wavelet = (np.median(np.abs(coeffs[-1])) + epsilon) / 0.6745
+        ## Define threshold by the universal Donoho rule
+        threshold = sigma_for_wavelet * np.sqrt(2 * np.log(len(df_data[col])))
+        coeffs_denoised = [pywt.threshold(c, value=threshold, mode='soft') for c in coeffs]
 
-        # Actualización
-        K = P_pred * H / (H * P_pred * H + R)  # Ganancia de Kalman
-        x = x_pred + K * (z - H * x_pred)
-        P = (1 - K * H) * P_pred
-
-        # Guardar el estado filtrado
-        filtered_signal.append(x)
-
-    df_denoised = pd.DataFrame(filtered_signal, columns = df_data.columns)
+        # Recompose the signal with the last coefficients
+        df_denoised[col] = pywt.waverec(coeffs_denoised, wavelet)[:len(df_data[col])]
     df_denoised = df_denoised.copy()
 
-    # Calc the metrics
+    # Show the metrics
     gt_values = df_data.values
     predicted_values = df_denoised.values
     mae = mean_absolute_error(gt_values, predicted_values)

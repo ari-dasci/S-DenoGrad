@@ -4,7 +4,7 @@ JOB_NAME=""
 PARTITION="dgx2,dgx"
 
 SCRIPTS=(
-    "src/scripts/tabular/real/house_prices/new_gradient.py"
+    "src/scripts/tabular/real/house_prices/all_denoising_methods.py"
     # "src/scripts/time_series/real/daily_climate/gradient_more_future.py"
     # "src/scripts/time_series/real/daily_climate/gradient.py"
     # "src/scripts/time_series/real/ECL/gradient.py"

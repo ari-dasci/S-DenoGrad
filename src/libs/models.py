@@ -479,7 +479,7 @@ class TemporalDenoisingAutoencoder(nn.Module):
             nn.ReLU(),
             nn.Upsample(scale_factor=2, mode='linear', align_corners=True)
         )
-    
+
     def forward(self, x):
         # Cambiar dimensiones de (batch, seq_len, feature_dim) a (batch, feature_dim, seq_len)
         x = x.permute(0, 2, 1)

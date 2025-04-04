@@ -10,7 +10,6 @@ from torch import nn
 from torch.utils.data import Dataset
 from IPython.display import display, clear_output
 from tqdm import tqdm
-import time
 
 
 class DLNoiseReduction():
@@ -225,7 +224,8 @@ class DLNoiseReduction():
         max_epochs: int=100,
         plot_progress: bool=False,
         denoise_y: bool=True,
-        path_to_save_imgs: str=None
+        path_to_save_imgs: str=None,
+        save_gradients: bool=True
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
@@ -244,6 +244,8 @@ class DLNoiseReduction():
         """
         x_tensor = self._x_noisy.copy()
         y_tensor = self._y_noisy.copy()
+        x_gradient_list = []
+        y_gradient_list = []
 
         if plot_progress:
             if self._x_noisy.shape[1] == 2:
@@ -293,6 +295,10 @@ class DLNoiseReduction():
             grad_l_x = grad_l_x / l2_grad
             grad_l_y = grad_l_y / l2_grad
 
+            if save_gradients:
+                x_gradient_list.append(grad_l_x)
+                y_gradient_list.append(grad_l_y)
+
             x_tensor -= grad_l_x*nrr*apply_gradient.sum(axis=1)[:, np.newaxis]
             if denoise_y:
                 y_tensor -= grad_l_y*nrr*apply_gradient.sum(axis=1)[:, np.newaxis]
@@ -306,7 +312,6 @@ class DLNoiseReduction():
                 axes[1].clear()
 
                 # Plot the data
-
                 if self._x_noisy.shape[1] == 2:
                     self._plot3D(axes, x_tensor, y_tensor)
                 elif self._x_noisy.shape[1] == 1:
@@ -330,7 +335,7 @@ class DLNoiseReduction():
         else:
             print('Noise threshold reached in all data points.')
 
-        return x_tensor, y_tensor
+        return x_tensor, y_tensor, x_gradient_list, y_gradient_list
 
 
     def _transform_time_series(
@@ -338,7 +343,8 @@ class DLNoiseReduction():
         nrr: float=0.05,
         nr_threshold: float=0.01,
         max_epochs: int=100,
-        denoise_y: bool=True
+        denoise_y: bool=True,
+        save_gradients: bool=True
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
@@ -359,8 +365,11 @@ class DLNoiseReduction():
         torch.backends.cudnn.benchmark = True
         try:
             self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
-        except:
+        except RuntimeError:
             pass
+
+        x_gradient_list = []
+        y_gradient_list = []
         self._model.train() # RNN backward allowed.
         epoch = 0
         apply_gradient = [True, True]
@@ -371,7 +380,6 @@ class DLNoiseReduction():
                 for i, _ in enumerate(self._x_noisy):
                     # Add a dimension to match the model requirements for time series
                     # (batch, window, variables) and make it a tensor.
-                    preparation_time_start = time.time() #######################################
                     x_tensor = torch.tensor(self._x_noisy[i][0]).unsqueeze(0)
                     x_tensor.requires_grad_(True)
                     y_tensor = torch.tensor(self._x_noisy[i][1]).unsqueeze(0)
@@ -380,31 +388,21 @@ class DLNoiseReduction():
                     # Calculate the gradients for X and Y performing a backpropagation step.
                     # Set the gradients to zero
                     self._criterion.zero_grad()
-                    preparation_time_end = time.time()##########################################
 
-
-                    prediction_time_start_0 = time.time()#######################################
                     # Predict the target for this iteration window
                     y_predicted = self._model.forward(
                         x_tensor.float().to(self._device)
                     )
-                    prediction_time_end_0 = time.time()#########################################
 
-                    prediction_time_start_1 = time.time()#######################################
                     # Add a dimension to match the shape of the y_tensor
                     y_predicted = y_predicted.unsqueeze(0)
                     loss = self._criterion(
                         y_predicted,
                         y_tensor.float().to(self._device)
                     )
-                    prediction_time_end_1 = time.time()#########################################
 
-                    prediction_time_start_2 = time.time()#######################################
                     loss.backward()
-                    prediction_time_end_2 = time.time()#########################################
 
-
-                    gradient_calc_time_start = time.time()######################################
                     # Decide if the gradient is going to be applied or not based on the threshold
                     y_predicted_array = y_predicted.detach().cpu().numpy()
                     y_tensor_array = y_tensor.detach().cpu().numpy()
@@ -427,50 +425,45 @@ class DLNoiseReduction():
 
                     apply_gradient = apply_gradient.squeeze(axis=0)
 
-                    gradient_calc_time_end = time.time()########################################
-
-                    apply_gradient_time_start = time.time()#####################################
                     grad_l_x = grad_l_x.squeeze(axis=0)
                     grad_l_x = grad_l_x*nrr*apply_gradient
                     grad_l_x_shape = grad_l_x.shape[0]
                     if self.is_cnn:
                         grad_l_x_shape = grad_l_x.shape[1]
                         grad_l_x = grad_l_x.T
+
+                    if save_gradients:
+                        x_gradient_list.append(grad_l_x)
                     self._x_noisy.X[n_window:n_window+grad_l_x_shape] -= grad_l_x
 
                     if denoise_y:
                         grad_l_y = grad_l_y.mean()
                         grad_l_y = grad_l_y*nrr*apply_gradient
+
+                        if save_gradients:
+                            y_gradient_list.append(grad_l_y)
                         self._x_noisy.Y[n_window:n_window+grad_l_y.shape[0]] -= grad_l_y
-                    apply_gradient_time_end = time.time()#######################################
 
                     n_window += 1
                     pbar1.update(1)
 
                 epoch += 1
-
-                # print(f'Preparation time: {(preparation_time_end - preparation_time_start)*35040}')
-                # print(f'prediction time0: {(prediction_time_end_0 - prediction_time_start_0)*35040}')
-                # print(f'Loss time1: {(prediction_time_end_1 - prediction_time_start_1)*35040}')
-                # print(f'Backward time2: {(prediction_time_end_2 - prediction_time_start_2)*35040}')
-                # print(f'gradient_calc time: {(gradient_calc_time_end - gradient_calc_time_start)*35040}')
-                # print(f'apply_gradient time: {(apply_gradient_time_end - apply_gradient_time_start)*35040}')
         if epoch >= max_epochs:
             print(f'Max epochs reached: {epoch/max_epochs}')
         else:
             print('Noise threshold reached in all data points.')
 
-        return self._x_noisy.X, self._x_noisy.Y
+        return self._x_noisy.X, self._x_noisy.Y, x_gradient_list, y_gradient_list
 
 
     # Public methods
     # --------------------------------------------------------------------------
-    def fit(self, X: Union[np.array, Dataset], y: np.array = None) -> None:
+    def fit(self, x: Union[np.array, Dataset], y: np.array = None) -> None:
         """
         Fit the model to the input data.
 
         Args:
-            X (np.array): array-like of shape (n_samples, n_features).
+            x (np.array): array-like of shape (n_samples, n_features).
                 The training input samples.
             y (np.array): array-like of shape (n_samples, n_targets).
                 The target values (real numbers).
@@ -478,10 +471,11 @@ class DLNoiseReduction():
         if y is not None:
             assert not self.is_ts, 'Model set to work with time series but «y» has been provided.'
             self._y_noisy = y.copy()
-            self._x_noisy = X.copy()
+            self._x_noisy = x.copy()
         else:
-            assert self.is_ts, 'Model prepared to work with tabular data but no «y» has been provided.'
-            self._x_noisy = X
+            assert self.is_ts, 'Model prepared to work with tabular data but no «y» has been \
+                provided.'
+            self._x_noisy = x
 
 
     def transform(
@@ -491,7 +485,8 @@ class DLNoiseReduction():
         max_epochs: int=100,
         plot_progress: bool=False,
         denoise_y: bool=True,
-        path_to_save_imgs: str=None
+        path_to_save_imgs: str=None,
+        save_gradients: bool=True
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
@@ -510,35 +505,40 @@ class DLNoiseReduction():
         """
         x_tensor = None
         y_tensor = None
+        x_gradient_list = None
+        y_gradient_list = None
         if not self.is_ts:
-            x_tensor, y_tensor = self._transform_tabular(
+            x_tensor, y_tensor, x_gradient_list, y_gradient_list = self._transform_tabular(
                 nrr=nrr,
                 nr_threshold=nr_threshold,
                 max_epochs=max_epochs,
                 plot_progress=plot_progress,
                 denoise_y=denoise_y,
-                path_to_save_imgs=path_to_save_imgs
+                path_to_save_imgs=path_to_save_imgs,
+                save_gradients=save_gradients
             )
         else:
-            x_tensor, y_tensor = self._transform_time_series(
+            x_tensor, y_tensor, x_gradient_list, y_gradient_list = self._transform_time_series(
                 nrr=nrr,
                 nr_threshold=nr_threshold,
                 max_epochs=max_epochs,
-                denoise_y=denoise_y
+                denoise_y=denoise_y,
+                save_gradients=save_gradients
             )
 
-        return x_tensor, y_tensor
+        return x_tensor, y_tensor, x_gradient_list, y_gradient_list
 
 
     def fit_transform(
         self,
-        X: np.array,
+        x: np.array,
         y: np.array,
         nrr: float=0.05,
         nr_threshold: float=0.01,
         max_epochs: int=100,
         plot_progress: bool=False,
-        path_to_save_imgs: str=None
+        path_to_save_imgs: str=None,
+        save_gradients: bool=True
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Fit the model to the input data and decrease the noise level in the input
@@ -546,7 +546,7 @@ class DLNoiseReduction():
         considerably more time.
 
         Args:
-            X (np.array): array-like of shape (n_samples, n_features).
+            x (np.array): array-like of shape (n_samples, n_features).
                 The training input samples.
             y (np.array): array-like of shape (n_samples, n_targets).
                 The target values (real numbers).
@@ -561,16 +561,17 @@ class DLNoiseReduction():
         Returns:
             Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
         """
-        self.fit(X, y)
-        x_denoised, y_denoised = self.transform(
+        self.fit(x, y)
+        x_denoised, y_denoised, x_gradient_list, y_gradient_list = self.transform(
             nrr=nrr,
             nr_threshold=nr_threshold,
             max_epochs=max_epochs,
             plot_progress=plot_progress,
-            path_to_save_imgs=path_to_save_imgs
+            path_to_save_imgs=path_to_save_imgs,
+            save_gradients=save_gradients
         )
 
-        return x_denoised, y_denoised
+        return x_denoised, y_denoised, x_gradient_list, y_gradient_list
 
 
     def assert_improvement(self, x_denoised: np.ndarray, y_denoised: np.ndarray,
