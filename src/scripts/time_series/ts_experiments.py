@@ -1,4 +1,3 @@
-# pylint: disable=import-error
 # pylint: disable=wrong-import-position
 """
 title: real_house_prices_exp
@@ -13,10 +12,11 @@ adding Gaussian noise to it. Then, a neural network model is trained to predict 
 variable. Finally, the gradients are used to reduce the noise in the data.
 """
 
-# Libraries & Global variables #
+# Libraries #
 # ------------------------------------------------------------------------------------------------ #
 # Public libraries
 import os
+import sys
 import random
 import argparse
 import json
@@ -33,21 +33,23 @@ from PyEMD import EMD
 from filterpy.kalman import KalmanFilter
 import pywt
 # Local libraries
-from src.libs.models import Trainer
+sys.path.append(os.getcwd())
+from src.libs.models import Trainer, LSTMModel, DenoisingAutoencoder, DenseResNetDenoising
 from src.libs.utils import symmetric_mean_absolute_percentage_error
-from src.libs.dataset import TensorDataset
-from src.libs.models import GridFullyDenseNN, DenoisingAutoencoder, DenseResNetDenoising
+from src.libs.dataset import TensorDataset, SlidingWindowDataset
 from src.libs.dlnr import DLNoiseReduction
-from src.libs.experiment_templates import TabularExperiment
+from src.libs.experiment_templates import TSExperiment
 
 
-# Seed
+# Seeds #
+# ------------------------------------------------------------------------------------------------ #
 random.seed(42)
 np.random.seed(42)
 torch.manual_seed(42)
 
 
-# Argument parser
+# Arguments #
+# ------------------------------------------------------------------------------------------------ #
 parser = argparse.ArgumentParser(description="Tabular Experiment")
 parser.add_argument(
     '--data_folder', 
@@ -97,7 +99,8 @@ parser.add_argument(
     type=str,
     default='["dae", "dlnr", "emd", "kalman_filter", "moving_average", "pca", "resnet", \
         "wavelet_transform"]',
-    help="List of denoising methods to use as a JSON string. Default is [...]"
+    help="List of denoising methods to use as a JSON string. Default is ['dae', 'dlnr', 'emd', \
+        'kalman_filter', 'moving_average', 'pca', 'resnet', 'wavelet_transform']"
 )
 parser.add_argument(
     '--slurm_id',
@@ -109,16 +112,18 @@ args = parser.parse_args()
 args.denoising_methods = json.loads(args.denoising_methods)
 
 
-# Global variables
+# Global variables & Flags #
+# ------------------------------------------------------------------------------------------------ #
 _CURRENT_DIR = os.getcwd()
 _FOLDERS = _CURRENT_DIR.split(os.sep)
 _PROJECT_FOLDER_INDEX = _FOLDERS.index('S-noise-gradient')
 _CURRENT_DIR = os.sep.join(_FOLDERS[:_PROJECT_FOLDER_INDEX+1])
-# Update the DATA_PATH and OUT_PATH based on the provided data folder
-DATA_PATH = os.path.join(_CURRENT_DIR, 'data', 'tabular', 'real', args.data_folder)
-OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'tabular', 'real', args.data_folder)
-CHECKPOINT_PATH = os.path.join(_CURRENT_DIR, 'checkpoints', 'tabular', 'real', args.data_folder)
-GRADIENTS_PATH = os.path.join(_CURRENT_DIR, 'gradients', 'tabular', 'real', args.data_folder)
+DATA_PATH = os.path.join(_CURRENT_DIR, 'data', 'time_series', args.data_folder)
+OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'time_series', args.data_folder)
+CHECKPOINT_PATH = os.path.join(_CURRENT_DIR, 'checkpoints', 'time_series', args.data_folder)
+GRADIENTS_PATH = os.path.join(_CURRENT_DIR, 'gradients', 'time_series', args.data_folder)
+if not os.path.exists(GRADIENTS_PATH):
+    os.makedirs(GRADIENTS_PATH)
 
 # Flags
 VERBOSE = args.verbose # If True, the script will print the progress of the training and testing.
@@ -129,11 +134,13 @@ TRAIN_DENOISING_METHOD = args.load_denoising_method
 IS_CNN = False # If True, the script will take into accoount that a CNN model will be used.
 
 # Device
-device = args.device
+DEVICE = args.device
 
 
+# Functions #
+# ------------------------------------------------------------------------------------------------ #
 def dae(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, batch_size: int = 64,
-        latent_dim: int = 32, lr: float = 0.001, criterion: nn.Module = nn.MSELoss(),
+        latent_dim: int = 8, lr: float = 0.001, criterion: nn.Module = nn.MSELoss(),
         optimizer: optim.Optimizer = optim.Adam, epoch_scheduler: optim.lr_scheduler = None,
         batch_scheduler: optim.lr_scheduler = None, epochs: int = 500, patience: int = 15,
         checkpoint_path: str = None, should_train: bool = True) -> tuple:
@@ -149,7 +156,7 @@ def dae(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, batch_
             Default is 42.
         batch_size (int, optional): Batch size for the DataLoader. Default is 64.
         latent_dim (int, optional): Dimensionality of the latent space in the autoencoder.
-            Default is 32.
+            Default is 8.
         lr (float, optional): Learning rate for the optimizer. Default is 0.001.
         criterion (nn.Module, optional): Loss function to use during training.
             Default is nn.MSELoss().
@@ -200,7 +207,7 @@ def dae(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, batch_
     model = DenoisingAutoencoder(
         input_dim=train_dae.shape[1],
         latent_dim=latent_dim,
-    ).to(device)
+    ).to(DEVICE)
 
     # Set model parameters and create the model Trainer object
     optimizer = optimizer(model.parameters(), lr=lr)
@@ -210,7 +217,7 @@ def dae(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, batch_
         model=model,
         train_generator=train_dataloader,
         val_generator=val_dataloader,
-        device=device,
+        device=DEVICE,
         criterion=criterion,
         optimizer=optimizer,
         epoch_scheduler=epoch_scheduler,
@@ -235,7 +242,7 @@ def dae(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, batch_
     ## Predict and get the metrics for de NN model ##
     ## ------------------------------------------------------------------------------------------ ##
     df_denoised = model(
-        torch.tensor(df_data.values).float().to(device)
+        torch.tensor(df_data.values).float().to(DEVICE)
     ).cpu().detach().numpy()
     df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
 
@@ -260,10 +267,11 @@ def dae(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, batch_
 
 
 def dlnr(noisy_data: dict,
-         batch_size: int = 64, lr: float = 0.001, criterion: nn.Module = nn.MSELoss(),
-         optimizer: optim.Optimizer = optim.Adam, epoch_scheduler: optim.lr_scheduler = None,
-         batch_scheduler: optim.lr_scheduler = None, epochs: int = 500, patience: int = 15,
-         checkpoint_path: str = None, gradients_path: str = None, should_train: bool = True
+         batch_size: int = 64, window_size: int = 30, lr: float = 0.01,
+         criterion: nn.Module = nn.MSELoss(), optimizer: optim.Optimizer = optim.Adam,
+         epoch_scheduler: optim.lr_scheduler = None, batch_scheduler: optim.lr_scheduler = None,
+         epochs: int = 500, patience: int = 15,checkpoint_path: str = None,
+         gradients_path: str = None, should_train: bool = True, model_params_dict: dict = None
          ) -> tuple:
     """
     Perform training, evaluation, and gradient-based denoising using a neural network (NN) model.
@@ -309,37 +317,27 @@ def dlnr(noisy_data: dict,
         - Finally, the method applies a gradient-based noise reduction technique to denoise the
             input data.
     """
-    train_dataset = TensorDataset(
-        x=noisy_data['x_train'],
-        y=noisy_data['y_train'].reshape(-1,1)
+    train_dataset = SlidingWindowDataset(
+        noisy_data['x_train'],
+        noisy_data['y_train'],
+        window_size=window_size,
+        future=1,
+        cnn=IS_CNN
     )
-    val_dataset = TensorDataset(
-        x=noisy_data['x_test'],
-        y=noisy_data['y_test'].reshape(-1,1)
+    val_dataset = SlidingWindowDataset(
+        noisy_data['x_test'],
+        noisy_data['y_test'],
+        window_size=window_size,
+        future=1,
+        cnn=IS_CNN
     )
 
     # Create the dataloaders
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     # Create Neural Network model
-    model = GridFullyDenseNN(
-        n_layers=7,
-        hidden_layers=[
-            (noisy_data['x_train'].shape[1], 64),
-            (64, 256),
-            (256, 1024),
-            (1024, 1024),
-            (1024, 512),
-            (512, 128),
-            (128, 1)
-        ],
-        dropout_layers=[0.0] * 7,
-        activation_func_layers=[nn.ReLU()] * 6 + [nn.Identity()],
-        want_dropout=[False] * 7,
-        want_linear=[True] * 7,
-        want_activation=[True] * 7,
-    ).to(device)
+    model = LSTMModel(noisy_data['x_train'].shape[1], **model_params_dict).to(DEVICE)
 
     # Set model parameters and create the model Trainer object
     optimizer = optimizer(model.parameters(), lr=lr)
@@ -349,7 +347,7 @@ def dlnr(noisy_data: dict,
         model=model,
         train_generator=train_dataloader,
         val_generator=val_dataloader,
-        device=device,
+        device=DEVICE,
         criterion=criterion,
         optimizer=optimizer,
         epoch_scheduler=epoch_scheduler,
@@ -371,12 +369,11 @@ def dlnr(noisy_data: dict,
         model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
 
     ## Predict and get the metrics for de NN model
-    y_pred_test = model(
-        torch.tensor(noisy_data['x_test'],).float().to(device)
-    ).cpu().detach().numpy().reshape(-1)
+    predictions_test = trainer_basic.eval_dataloader(val_dataloader)
+    y_pred_test = np.array([y for x in predictions_test for y in x])
 
     # Show the metrics
-    gt_values = noisy_data['y_test']
+    gt_values = noisy_data['y_test'][window_size:]
     predicted_values = y_pred_test
     mae = mean_absolute_error(gt_values, predicted_values)
     smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
@@ -395,15 +392,33 @@ def dlnr(noisy_data: dict,
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
     df_denoised = noisy_data['df'].copy()
-    input_vars = list(set(df_denoised.columns) - set(['y']))
-    dlnr_model = DLNoiseReduction(model=model, criterion=criterion)
-    dlnr_model.fit(noisy_data['df'][input_vars].values, noisy_data['df']['y'].values.reshape(-1, 1))
-    df_denoised[input_vars], df_denoised['y'], x_gradients, y_gradients = dlnr_model.transform(
+    input_vars = list(df_denoised.columns)
+
+    x_sliding = noisy_data['df'][input_vars].values
+    y_sliding = noisy_data['df'][['y']]
+    df_to_denoise = SlidingWindowDataset(
+        x_sliding,
+        y_sliding,
+        window_size=window_size,
+        future=1,
+        cnn=IS_CNN
+    )
+
+    dlnr_model = DLNoiseReduction(
+        model=model,
+        criterion=criterion,
+        device=DEVICE,
+        is_ts=True,
+        is_cnn=IS_CNN
+    )
+    dlnr_model.fit(df_to_denoise)
+    df_denoised[input_vars], _, x_gradients, y_gradients = dlnr_model.transform(
         nrr=0.05,
         nr_threshold=0.01,
-        max_epochs=200,
+        max_epochs=1000,
         plot_progress=False,
         path_to_save_imgs=None,
+        denoise_y=False,
         save_gradients=save_gradients
     )
 
@@ -618,7 +633,7 @@ def resnet(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, bat
     model = DenseResNetDenoising(
         input_dim=train_nn.shape[1],
         hidden_dim=hidden_dim,
-    ).to(device)
+    ).to(DEVICE)
 
     # Set model parameters and create the model Trainer object
     optimizer = optimizer(model.parameters(), lr=lr)
@@ -628,7 +643,7 @@ def resnet(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, bat
         model=model,
         train_generator=train_dataloader,
         val_generator=val_dataloader,
-        device=device,
+        device=DEVICE,
         criterion=criterion,
         optimizer=optimizer,
         epoch_scheduler=epoch_scheduler,
@@ -653,7 +668,7 @@ def resnet(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, bat
     ## Predict and get the metrics for de NN model ##
     ## ------------------------------------------------------------------------------------------ ##
     df_denoised = model(
-        torch.tensor(df_data.values).float().to(device)
+        torch.tensor(df_data.values).float().to(DEVICE)
     ).cpu().detach().numpy()
     df_denoised = pd.DataFrame(df_denoised, columns=df_data.columns)
 
@@ -718,6 +733,8 @@ def wavelet_transform(noisy_data: dict, wavelet_type: str = 'db4') -> pd.DataFra
     return df_denoised
 
 
+# Main function #
+# ------------------------------------------------------------------------------------------------ #
 def main():
     """
     Main function to execute the tabular experiment pipeline.
@@ -773,6 +790,10 @@ def main():
             "p": 2,
             "n_jobs": None
         },
+        'arima': {
+            'order': (7, 0, 0),
+            'seasonal_order': (0, 0, 1, 30)
+        }
     }
 
     # Denoising methods configuration
@@ -782,7 +803,7 @@ def main():
         'test_size': 0.2,
         'random_state': 42,
         'batch_size': 64,
-        'latent_dim': 32,
+        'latent_dim': 8,
         'lr': 0.001,
         'criterion': nn.MSELoss(),
         'optimizer': optim.Adam,
@@ -795,6 +816,13 @@ def main():
     }
 
     # DLNR - Deep Learning Noise Reduction
+    dlnr_model_params = {
+        'hidden_size': 64,
+        'output_size': 1,
+        'num_layers': 1,
+        'dropout': 0.2,
+        'bidirectional': True
+    }
     dlnr_params = {
         'batch_size': 64,
         'lr': 0.001,
@@ -806,7 +834,8 @@ def main():
         'patience': 15,
         'checkpoint_path': None,
         'gradients_path': GRADIENTS_PATH,
-        'should_train': TRAIN_DENOISING_METHOD
+        'should_train': TRAIN_DENOISING_METHOD,
+        'model_params_dict': dlnr_model_params,
     }
 
     # EMD - Empirical Mode Decomposition
@@ -864,7 +893,7 @@ def main():
         'kalman_filter': {'method': kalman_filter, 'params': kalman_filter_params},
         'moving_average': {'method': moving_average, 'params': moving_average_params},
         'pca': {'method': pca, 'params': pca_params},
-        'resnet': {'method': resnet_params, 'params': resnet_params},
+        'resnet': {'method': resnet, 'params': resnet_params},
         'wavelet_transform': {'method': wavelet_transform, 'params': wavelet_transform_params}
     }
 
@@ -893,15 +922,16 @@ def main():
             )
 
         # Create the folders if they do not exist
-        print(f"Creating output path: {current_out_path}")
-        print(f"Creating checkpoint path: {current_checkpoint_path}")
+        if VERBOSE:
+            print(f"Creating output path: {current_out_path}")
+            print(f"Creating checkpoint path: {current_checkpoint_path}")
         if not os.path.exists(current_out_path):
             os.makedirs(current_out_path)
         if not os.path.exists(current_checkpoint_path):
             os.makedirs(current_checkpoint_path)
 
         # Experiment configuration
-        experiment = TabularExperiment(
+        experiment = TSExperiment(
             data_path=DATA_PATH,
             out_path=current_out_path,
             checkpoint_path=current_checkpoint_path,
@@ -911,15 +941,30 @@ def main():
             train_noisy_xai=TRAIN_NOISY_XAI,
             train_denoised_xai=TRAIN_DENOISED_XAI,
             train_denoising_method=TRAIN_DENOISING_METHOD,
+            verbose=VERBOSE,
         )
-        # Run the experiment
-        experiment.run(
-            data_file=args.data_file,
-            add_noise=False,
-            denoising_method=denoising_dict['method'],
-            denoising_method_params=denoising_dict['params'],
-            xai_models_params=xai_models_parms
-        )
+
+        if 'synthetic' in DATA_PATH:
+            for sigma in np.arange(0.00, 0.16, 0.01):
+                sigma = round(sigma, 2)
+                # Run the experiment for synthetic data
+                experiment.run(
+                    data_file=args.data_file,
+                    add_noise=True,
+                    sigma=sigma,
+                    denoising_method=denoising_dict['method'],
+                    denoising_method_params=denoising_dict['params'],
+                    xai_models_params=xai_models_parms
+                )
+        else:
+            # Run the experiment for real data
+            experiment.run(
+                data_file=args.data_file,
+                add_noise=False,
+                denoising_method=denoising_dict['method'],
+                denoising_method_params=denoising_dict['params'],
+                xai_models_params=xai_models_parms
+            )
 
 # Main #
 # ------------------------------------------------------------------------------------------------ #

@@ -66,6 +66,8 @@ import random
 import torch
 import numpy as np
 import pandas as pd
+import dask.array as da
+from dask.dataframe import from_pandas
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
@@ -179,11 +181,45 @@ class BaseExperiment:
         """
         sigma = round(sigma, 3)
         self.noisy_data['df'] = add_gaussian_noise(
-            df=self.original_data['df'].copy(),
+            data=self.original_data['df'].copy(),
             columns=list(self.original_data['df'].columns),
             mean=0.0,
             std=sigma
         )
+
+        self.noisy_data['x_train'] = add_gaussian_noise(
+            data=self.original_data['x_train'].copy().to_numpy()
+                if isinstance(self.original_data['x_train'], pd.Series)
+                else self.original_data['x_train'].copy(),
+            columns=[],
+            mean=0.0,
+            std=sigma
+        )
+        self.noisy_data['x_test'] = add_gaussian_noise(
+            data=self.original_data['x_test'].copy().to_numpy()
+                if isinstance(self.original_data['x_test'], pd.Series)
+                else self.original_data['x_test'].copy(),
+            columns=[],
+            mean=0.0,
+            std=sigma
+        )
+        self.noisy_data['y_train'] = add_gaussian_noise(
+            data=self.original_data['y_train'].copy().to_numpy()
+                if isinstance(self.original_data['y_train'], pd.Series)
+                else self.original_data['y_train'].copy(),
+            columns=[],
+            mean=0.0,
+            std=sigma
+        )
+        self.noisy_data['y_test'] = add_gaussian_noise(
+            data=self.original_data['y_test'].copy().to_numpy()
+                if isinstance(self.original_data['y_test'], pd.Series)
+                else self.original_data['y_test'].copy(),
+            columns=[],
+            mean=0.0,
+            std=sigma
+        )
+        self.noisy_data['df'].name = "noisy"
 
     def _perform_xai_benchmark(self, model_params: dict, train_data_dict: dict,
                                test_data_dict: dict, checkpoint_folder: str, should_train: bool,
@@ -390,7 +426,6 @@ class BaseExperiment:
             self.denoised_data['df'],
             columns=self.noisy_data['df'].columns
         )
-        self.denoised_data['df'].name = 'denoised'
 
         if self.is_ts:
             # Shift the target variable to create a new column
@@ -415,12 +450,15 @@ class BaseExperiment:
                 random_state=42
             )
 
+        self.denoised_data['df'].name = 'denoised'
         self.denoised_data['x_train'] = x_train
         self.denoised_data['x_test'] = x_test
         self.denoised_data['y_train'] = y_train
         self.denoised_data['y_test'] = y_test
 
         gt_values = self.noisy_data['df'].values
+        if self.is_ts:
+            gt_values = gt_values[:-1]
         predicted_values = self.denoised_data['df'].values
         mae = mean_absolute_error(gt_values, predicted_values)
         smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
@@ -475,9 +513,25 @@ class BaseExperiment:
                             bins = histogram_bins[col]
 
                         # Calculate histogram
-                        hist, bin_edgs = np.histogram(data_dict['df'][col], bins=bins, density=True)
+                        dask_data = from_pandas(
+                            data_dict['df'][col],
+                            npartitions=len(data_dict['df'][col])
+                        )
+                        if 'ECL' not in self.data_path:
+                            hist, bin_edges = np.histogram(
+                                data_dict['df'][col],
+                                bins=bins,
+                                density=True
+                            )
+                        else:
+                            hist, bin_edges = da.histogram(
+                                dask_data,
+                                bins=50,
+                                density=True,
+                                range=(data_dict['df'][col].min(), data_dict['df'][col].max())
+                            )
                         data_dict['histogram'][col] = hist + 1e-10
-                        histogram_bins[col] = len(bin_edgs) - 1
+                        histogram_bins[col] = len(bin_edges) - 1
 
     def _calc_kullback_leibler_divergence(self) -> None:
         """
@@ -629,6 +683,10 @@ class BaseExperiment:
         noisy_points = self.noisy_data['df'].values
         denoised_points = self.denoised_data['df'].values
 
+        if self.is_ts:
+            original_points = original_points[:-1] if original_points is not None else None
+            noisy_points = noisy_points[:-1]
+
         if noisy_points.shape != denoised_points.shape:
             raise ValueError("Noisy and denoised data must have the same shape.")
 
@@ -681,7 +739,7 @@ class BaseExperiment:
         self._calc_kullback_leibler_divergence()
         self._calc_mean_distances_between_datsets()
 
-    def save_results(self):
+    def save_results(self, add_noise: bool = False, sigma: float = 0.02) -> None:
         """
         Saves the predictions and metrics dictionaries to JSON files.
         This method converts the `predictions_dict` and `metrics_dict` attributes 
@@ -717,16 +775,17 @@ class BaseExperiment:
         )
 
         cnn_str = 'cnn_' if self.is_cnn else ''
+        sigma_str = f'sigma_{sigma}_' if add_noise else ''
         # Save predictions
         with open(
-            os.path.join(self.out_path, f'{self.subfix_name}_{cnn_str}predictions.json'),
+            os.path.join(self.out_path, f'{self.subfix_name}_{cnn_str}{sigma_str}predictions.json'),
             'w',
             encoding='utf-8') as file:
             json.dump(self.predictions_dict, file, ensure_ascii=False, indent=4)
 
         # Save metrics
         with open(
-            os.path.join(self.out_path, f'{self.subfix_name}_{cnn_str}metrics.json'),
+            os.path.join(self.out_path, f'{self.subfix_name}_{cnn_str}{sigma_str}metrics.json'),
             'w',
             encoding='utf-8') as file:
             json.dump(self.metrics_dict, file, ensure_ascii=False, indent=4)
@@ -805,7 +864,7 @@ class BaseExperiment:
         self.calculate_metrics()
 
         # Save results
-        self.save_results()
+        self.save_results(add_noise=add_noise, sigma=sigma)
 
 
 # TSExperiment #
@@ -841,7 +900,7 @@ class TSExperiment(BaseExperiment):
                          train_denoising_method, verbose)
         self.is_ts = True
 
-    def load_data(self, data_file: str, y_col_name: str) -> tuple:
+    def load_data(self, data_file: str, y_col_name: str = '') -> tuple:
         """
         Loads and preprocesses data from a specified file, scales the data, shifts the target
         column, and splits it into training and testing datasets.
@@ -872,7 +931,7 @@ class TSExperiment(BaseExperiment):
             )
         )
 
-        df_data.rename(columns={y_col_name: "y"}, inplace=True)
+        # df_data.rename(columns={y_col_name: "y"}, inplace=True)
 
         # scale the data
         scaler = StandardScaler()
@@ -891,7 +950,7 @@ class TSExperiment(BaseExperiment):
             df_data[input_vars].values, y_shifted, test_size=0.2, shuffle=False
         )
 
-        synthetic = 'synthetic' in data_file
+        synthetic = 'synthetic' in self.data_path
         if synthetic:
             self.original_data['df'] = df_data
             self.original_data['x_train'] = x_train
@@ -983,7 +1042,7 @@ class TabularExperiment(BaseExperiment):
             df_data[input_vars].values, df_data['y'].values, test_size=0.2, random_state=42
         )
 
-        synthetic = 'synthetic' in data_file
+        synthetic = 'synthetic' in self.data_path
         if synthetic:
             self.original_data['df'] = df_data
             self.original_data['x_train'] = x_train

@@ -21,6 +21,7 @@ class DLNoiseReduction():
         self,
         model: nn.Module,
         criterion: nn.modules.loss._Loss,
+        device: torch.device = None,
         is_ts: bool = False,
         is_cnn: bool = False
     ):
@@ -34,7 +35,7 @@ class DLNoiseReduction():
         """
         self._model = model
         self._criterion = criterion
-        self._device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self._device = torch.device('cuda') if device is None else device
         self._x_noisy = None
         self._y_noisy = None
         self.is_ts = is_ts

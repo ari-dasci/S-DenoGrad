@@ -27,13 +27,11 @@ Classes:
     MinMaxScalerCustom: Min Max Scaler with custom range for each column
 """
 
-# Add libs path to sys path and create some global path variables
+# Import libraries
 # ------------------------------------------------------------------------------------------------ #
 import os
 import sys
-
-# Import libraries
-# ------------------------------------------------------------------------------------------------ #
+from typing import List
 import platform
 import pandas as pd
 import numpy as np
@@ -41,8 +39,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from ipywidgets import widgets
 from torch.utils.data import DataLoader
-from typing import List
 # Locals
+sys.path.append(os.getcwd())
 from src.libs.dataset import SlidingWindowDataset
 
 
@@ -306,22 +304,33 @@ def plot_predictions(variable, variables_dict, visualize, futures,
     plt.show()
 
 
-def add_gaussian_noise(df:pd.DataFrame, columns:List[str], mean:float = 0.0, std:float = 0.1):
+def add_gaussian_noise(data, columns:List[str] = None, mean:float = 0.0, std:float = 0.1):
     """
-    Adds Gaussian noise to specified columns in a DataFrame.
+    Adds Gaussian noise to specified columns in a DataFrame or to all elements in a numpy array.
 
     Args:
-        df (pandas.DataFrame): The DataFrame to which noise will be added.
-        columns (list): A list of column names in the DataFrame to which noise will be added.
-        mean (int, optional): The mean of the Gaussian distribution. Defaults to 0.
+        data (pandas.DataFrame or numpy.ndarray): The data to which noise will be added.
+        columns (list, optional): A list of column names in the DataFrame to which noise will
+            be added. If data is a numpy array, this parameter is ignored. Defaults to None.
+        mean (float, optional): The mean of the Gaussian distribution. Defaults to 0.0.
         std (float, optional): The standard deviation of the Gaussian distribution. Defaults to 0.1.
 
     Returns:
-        pandas.DataFrame: The DataFrame with added Gaussian noise to specified columns.
+        pandas.DataFrame or numpy.ndarray: The data with added Gaussian noise.
     """
-    for col in columns:
-        df[col] = df[col] + np.random.normal(loc=mean, scale=std, size=len(df))
-    return df
+    if isinstance(data, pd.DataFrame):
+        if columns is None:
+            raise ValueError("For DataFrame input, 'columns' must be specified.")
+        for col in columns:
+            data[col] += np.random.normal(loc=mean, scale=std, size=len(data))
+    elif isinstance(data, np.ndarray):
+        data += np.random.normal(loc=mean, scale=std, size=data.shape)
+    else:
+        print(type(data))
+        print(std)
+        raise TypeError("Input data must be a pandas.DataFrame or numpy.ndarray.")
+
+    return data
 
 
 # Genral functions

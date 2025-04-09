@@ -1,30 +1,27 @@
+# pylint: disable=wrong-import-position
 # Libs
 import os
 import sys
 import json
-import matplotlib.pyplot as plt
+# from itertools import islice
 import pandas as pd
-from tqdm import tqdm
-from itertools import islice
 import seaborn as sns
+import matplotlib.pyplot as plt
+# Local imports
+sys.path.append(os.getcwd())
+from src.libs.utils import make_dir
+
 
 # Global vars
-CURRENT_DIR = os.getcwd()
-FOLDERS = CURRENT_DIR.split(os.sep)
-TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
-CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
-LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'out')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'insights', 'correlation')
-
-assert os.path.exists(LIBS_PATH)
-sys.path.append(LIBS_PATH)
-
-# Local imports
-from utils import show_menu, make_dir
+_CURRENT_DIR = os.getcwd()
+_FOLDERS = _CURRENT_DIR.split(os.sep)
+_PROJECT_FOLDER_INDEX = _FOLDERS.index('S-noise-gradient')
+_CURRENT_DIR = os.sep.join(_FOLDERS[:_PROJECT_FOLDER_INDEX+1])
+DATA_PATH = os.path.join(_CURRENT_DIR, 'out')
+OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'insights', 'correlation')
 
 
-def list_files(init_folder):
+def list_files(init_folder: str):
     """
     Recursively lists all files in the given directory and its subdirectories with relative paths.
 
@@ -35,136 +32,186 @@ def list_files(init_folder):
     list: A list of relative file paths.
     """
     archivos = []
-    for root, dirs, files in os.walk(init_folder):
+    for root, _, files in os.walk(init_folder):
         for file in files:
             ruta_absoluta = os.path.join(root, file)
             archivos.append(ruta_absoluta)
     return archivos
 
 
-# Main
-if __name__ == "__main__":
-    # Folder or file selection
-    selected_folder = show_menu(DATA_PATH)
-    list_of_files = []
-
-    # Check that a folder has been selected.
+def validate_folder(selected_folder: str):
+    """
+    Validates that the selected path is a folder.
+    Raises:
+        ValueError: If the selected path is a file instead of a folder.
+    """
     if os.path.isfile(selected_folder):
         raise ValueError('A folder must be selected.')
 
-    noise_lvl = 0.05
-    # Walk through the folder until reach a leaf folder.
-    for root, dirs, files in os.walk(selected_folder):
-        if dirs:
+
+def get_correlation_data(dataset_path: str, methods_dict: dict, sigma: str=''):
+    """
+    Extracts correlation difference data for a given dataset.
+
+    Parameters:
+    dataset_path (str): Path to the dataset folder.
+    methods_dict (dict): Mapping of model names to denoising method names.
+
+    Returns:
+    dict: A dictionary containing correlation difference data for each method.
+    """
+    correlation_dict_to_plot = {}
+    for model in os.listdir(dataset_path):
+        model_path = os.path.join(dataset_path, model)
+        if not os.path.isdir(model_path):
             continue
 
-        # Stablish if the folder contains real/synthetic and tabular/time_series data.
-        is_real = 'real' in root
-        is_tabular = 'tabular' in root
+        # Look for the metrics file
+        metrics_file = next(
+            (f for f in os.listdir(model_path) if 'metrics' in f and sigma in f), None
+        )
+        if not metrics_file:
+            continue
 
-        # Go through all the files to make the comparison with gradient metrics.
-        correlation_dict = {}
-        for file in tqdm(files):
-            method = file.split('_')[0]
-            if 'metrics' not in file:
+        with open(os.path.join(model_path, metrics_file), 'r', encoding='utf-8') as f:
+            file_metrics = json.load(f)
+
+        # Extract correlations_diff values
+        method = methods_dict.get(model, model)
+        read_corr_diff_dict = file_metrics.get('correlations_diff', {})
+        correlation_dict_to_plot[method] = {
+            key: value for key, value in read_corr_diff_dict.items()
+            if value is not None
+        }
+
+    return correlation_dict_to_plot
+
+def plot_and_save_correlation(df_corr, data_type, data_origin, dataset, out_path):
+    """
+    Creates and saves a grouped bar plot for correlation differences.
+
+    Parameters:
+    df_corr (pd.DataFrame): DataFrame containing correlation difference data.
+    data_type (str): Type of data (e.g., 'tabular', 'time_series').
+    data_origin (str): Origin of data (e.g., 'real', 'synthetic').
+    dataset (str): Dataset name.
+    out_path (str): Path to save the output plot.
+    """
+    if df_corr.empty:
+        return
+
+    # Transpose the DataFrame to group bars by model
+    df_corr = df_corr.T
+    df_corr.index.name = 'Denoising method'
+    df_corr.reset_index(inplace=True)
+    df_melted = df_corr.melt(id_vars='Denoising method',
+                                var_name='Correlation difference type',
+                                value_name='Correlation difference')
+
+    # Create and save the grouped bar plot
+    _, ax = plt.subplots(figsize=(12, 8))
+    sns.barplot(
+        data=df_melted,
+        x='Denoising method',
+        y='Correlation difference',
+        hue='Correlation difference type',
+        ax=ax,
+        palette='ch:start=.5,rot=-0.6,dark=.5,light=.8'#'Spectral'# 'YlOrBr'# 'viridis'
+    )
+
+    # Display the value of each column above or inside the bars
+    y_max = ax.get_ylim()[1]
+    for container in ax.containers:
+        for bar_var in container:
+            height = bar_var.get_height()
+            text = f'{height:.4f}'
+            if height > 0.15 * y_max:
+                ax.text(
+                    bar_var.get_x() + bar_var.get_width() / 2,
+                    height / 2,
+                    text,
+                    ha='center',
+                    va='center',
+                    fontsize=10,
+                    # color='white',
+                    rotation=90
+                )
+            else:
+                ax.text(
+                    bar_var.get_x() + bar_var.get_width() / 2,
+                    height + (0.02 * y_max),
+                    text,
+                    ha='center',
+                    va='bottom',
+                    fontsize=10,
+                    rotation=90
+                )
+
+    # Configure plot title and labels
+    data_str = f'{data_type} {data_origin} {dataset.upper()}'
+    ax.set_title(f"Correlation difference comparison\nData: {data_str}", fontsize=14)
+    ax.set_ylabel("Correlation difference", fontsize=12)
+    ax.set_xlabel("Denoising method", fontsize=12)
+    ax.grid(axis="y", linestyle="--", alpha=0.7)
+    ax.legend(title='Correlation difference type', fontsize=10, title_fontsize=12)
+
+    # Save the figure
+    fig_path = os.path.join(out_path, data_type, data_origin)
+    make_dir(fig_path)
+    fig_path = os.path.join(fig_path, f'{dataset}.png')
+    plt.savefig(fig_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def main():
+    """
+    Main function to analyze correlation differences across datasets and denoising methods.
+    """
+    # Folder or file selection
+    selected_folder = DATA_PATH
+
+    # Validate the folder
+    validate_folder(selected_folder)
+
+    methods_dict = {
+        'dae': 'DAE',
+        'dlnr': 'DLNR',
+        'emd': 'EMD',
+        'kalman_filter': 'Kalman',
+        'moving_average': 'MA',
+        'pca': 'PCA',
+        'resnet': 'ResNet',
+        'wavelet_transform': 'Wavelet'
+    }
+
+    # Walk through the folder structure
+    for data_type in ['tabular', 'time_series']:
+        data_type_path = os.path.join(selected_folder, data_type)
+        if not os.path.exists(data_type_path):
+            continue
+
+        for data_origin in ['real', 'synthetic']:
+            origin_path = os.path.join(data_type_path, data_origin)
+            if not os.path.exists(origin_path):
                 continue
 
-            correlation_dict[method] = {}
+            for dataset in os.listdir(origin_path):
+                dataset_path = os.path.join(origin_path, dataset)
+                if not os.path.isdir(dataset_path):
+                    continue
 
-            with open(os.path.join(root, file), 'r', encoding='utf-8') as f:
-                file_metrics = json.load(f)
+                # Extract correlation data
+                sigma = ''
+                if data_origin == 'synthetic':
+                    sigma = '0.05'
+                correlation_dict_to_plot = get_correlation_data(dataset_path, methods_dict, sigma)
 
-            # Get the denoised_over_denoised and orig_over_denoised metrics from file file.
-            denoised_file_metrics = {}
-            orig_noise_corr = None
-            orig_denoised_corr = None
-            if not is_real:
-                denoised_file_metrics = dict(islice(file_metrics.items(), 1, None))
-                denoised_file_metrics = denoised_file_metrics[f'{noise_lvl}']
+                # Create DataFrame for plotting
+                df_corr = pd.DataFrame(correlation_dict_to_plot)
 
-                orig_noise_corr = denoised_file_metrics['corr_diff_orig_noisy']
-                correlation_dict[method]['orig_noisy'] = orig_noise_corr
-            else:
-                denoised_file_metrics = file_metrics['denoised']
+                # Plot and save the correlation differences
+                plot_and_save_correlation(df_corr, data_type, data_origin, dataset, OUT_PATH)
 
-            orig_denoised_corr = denoised_file_metrics['corr_diff_orig_denoised']
-            correlation_dict[method]['orig_denoised'] = orig_denoised_corr
-
-        df_corr = pd.DataFrame(correlation_dict)
-        # df_corr = df_corr[sorted(df_corr.columns)]
-        df_corr = df_corr[df_corr.mean().sort_values().index]
-        df_corr.index.name = 'Correlation diference between'
-        if not is_real:
-            df_corr = df_corr.reset_index().melt(
-                id_vars='Correlation diference between',
-                var_name='Method',
-                value_name='Correlation difference'
-            )
-
-
-        # Crear y guardar la gráfica
-        fig, ax = plt.subplots(figsize=(10, 6))
-        bar_width = 0.7
-        if df_corr.empty or df_corr.shape[1] == 0:
-            raise ValueError(f"File: {file}. Empty Dataframe.")
-
-        # df_corr.T.plot(
-        #     kind='bar',
-        #     ax=ax,
-        #     width=bar_width,
-        #     colormap='tab20'
-        # )
-
-        if is_real:
-            sns.barplot(
-                data=df_corr,
-                ax=ax,
-                palette='viridis'
-            )
-        else:
-            sns.barplot(
-                x='Method',
-                y='Correlation difference',
-                hue='Correlation diference between',
-                data=df_corr,
-                palette='coolwarm'
-            )
-
-        # Añadir valores encima de las barras
-        for container in ax.containers:
-            ax.bar_label(container, fmt="%.2f", fontsize=8, padding=3)
-
-        path_parts = root.split(os.path.sep)
-        dataset = path_parts[-1]
-        real_or_synthetic = path_parts[-2]
-        tabular_or_ts = path_parts[-3]
-        # Guardar la figura
-        dataset_str = dataset.upper()
-        noise_str = ''
-        if not is_real:
-            noise_str = f'_s{noise_lvl}'
-
-            if not is_tabular:
-                dataset_str = ''
-                dataset = 'synthetic'
-                real_or_synthetic = path_parts[-1]
-                tabular_or_ts = path_parts[-2]
-
-        data_str = f'{tabular_or_ts} {real_or_synthetic} {dataset_str}{noise_str}'
-        # Configuración de la gráfica
-        ax.set_title(
-            f"Correlation difference comparison\nData: {data_str}",
-            fontsize=14
-        )
-        ax.set_ylabel("Correlation difference", fontsize=12)
-        ax.set_xlabel("Denoising method", fontsize=12)
-        # ax.set_xticklabels(df_corr.columns, rotation=0, fontsize=11)
-        # ax.legend(loc="upper right", bbox_to_anchor=(1.15, 1.22), fontsize=10)
-        ax.grid(axis="y", linestyle="--", alpha=0.7)
-
-
-        fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
-        make_dir(fig_path)
-        fig_path = os.path.join(fig_path, f'{dataset}.png')
-        plt.savefig(fig_path, dpi=300, bbox_inches="tight")
-        plt.close()
+# Main
+if __name__ == "__main__":
+    main()
