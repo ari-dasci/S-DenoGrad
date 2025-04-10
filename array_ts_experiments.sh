@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=tab_exp
+#SBATCH --job-name=ts_exp
 #SBATCH --partition=dgx2,dgx,dios
 #SBATCH -c 16
 #SBATCH --gres=gpu:1

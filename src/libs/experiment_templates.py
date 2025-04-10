@@ -844,26 +844,42 @@ class BaseExperiment:
             None
         """
         # Load data
+        if self.verbose:
+            print("Loading data...")
         self.load_data(data_file=data_file, y_col_name=y_col_name)
 
         # Add noise to the data if specified
         if add_noise:
+            if self.verbose:
+                print("Adding noise to the data...")
             self.add_noise(sigma=sigma)
 
         # Denoise the data
+        if self.verbose:
+            print("Denoising the data...")
         self.perform_denoising(denoising_method, **denoising_method_params)
 
         # Fit the XAI models on the original, noisy and denoised data
         if 'df' in self.original_data:
             if self.original_data['df'] is not None:
+                if self.verbose:
+                    print("Performing XAI benchmark trained with original data...")
                 self.perform_original_xai_benchmark(model_params=xai_models_params)
+        if self.verbose:
+            print("Performing XAI benchmark trained with noisy data...")
         self.perform_noisy_xai_benchmark(model_params=xai_models_params)
+        if self.verbose:
+            print("Performing XAI benchmark trained with denoised data...")
         self.perform_denoised_xai_benchmark(model_params=xai_models_params)
 
         # Calculate metrics
+        if self.verbose:
+            print("Calculating metrics...")
         self.calculate_metrics()
 
         # Save results
+        if self.verbose:
+            print("Saving results...")
         self.save_results(add_noise=add_noise, sigma=sigma)
 
 

@@ -1,9 +1,56 @@
+"""
+This script analyzes correlation differences across datasets and denoising methods, 
+generating grouped bar plots for visualization. It processes data from a specified 
+directory structure, extracts correlation difference metrics, and saves the plots 
+to an output directory.
+
+Functions:
+----------
+- list_files(init_folder: str) -> list:
+    Recursively lists all files in the given directory and its subdirectories 
+    with relative paths.
+
+- validate_folder(selected_folder: str):
+    Validates that the selected path is a folder. Raises a ValueError if the 
+    selected path is a file.
+
+- get_correlation_data(dataset_path: str, methods_dict: dict, sigma: str='') -> dict:
+    Extracts correlation difference data for a given dataset and maps models 
+    to denoising methods.
+
+- plot_and_save_correlation(df_corr: pd.DataFrame, data_type: str, data_origin: str, 
+                             dataset: str, out_path: str):
+
+- main():
+    Main function to analyze correlation differences across datasets and 
+    denoising methods. It validates the folder structure, processes datasets, 
+    and generates plots.
+
+Global Variables:
+-----------------
+- _CURRENT_DIR: str
+    The current working directory of the script.
+
+- DATA_PATH: str
+    Path to the input data directory.
+
+- OUT_PATH: str
+    Path to the output directory for saving plots.
+
+- methods_dict: dict
+    A mapping of model names to denoising method names.
+
+Usage:
+------
+Run the script directly to process datasets and generate correlation difference 
+plots. Ensure the input data directory structure matches the expected format.
+"""
+# -*- coding: utf-8 -*-
 # pylint: disable=wrong-import-position
 # Libs
 import os
 import sys
 import json
-# from itertools import islice
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt

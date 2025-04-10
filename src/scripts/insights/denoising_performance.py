@@ -1,27 +1,62 @@
+"""
+This script analyzes the denoising performance of various models across datasets and generates
+visualizations of R2 scores for different scenarios. It processes both real and synthetic datasets,
+extracts metrics data, and creates bar plots for each denoising method.
+
+Modules:
+    - os: Provides functions for interacting with the operating system.
+    - sys: Provides access to system-specific parameters and functions.
+    - json: Provides functions for working with JSON data.
+    - matplotlib.pyplot: Used for creating static, interactive, and animated visualizations.
+    - seaborn: A Python visualization library based on matplotlib.
+    - pandas: A data analysis and manipulation library.
+    - tqdm: A library for creating progress bars.
+    - src.libs.utils: Contains utility functions, such as `make_dir`.
+
+Functions:
+    - list_files(init_folder): Recursively lists all files in a directory and its subdirectories.
+    - get_metrics_data(dataset_path, sigma='', is_real=False): Extracts metrics data for a
+        given dataset.
+    - process_and_plot_metrics(metrics_dict, data_type, data_origin, dataset, out_path): Processes
+        metrics data and generates bar plots for each denoising method.
+    - main(): Main function to analyze denoising performance across datasets and models.
+
+Global Variables:
+    - _CURRENT_DIR: The current working directory.
+    - _FOLDERS: A list of folder names in the current directory path.
+    - _PROJECT_FOLDER_INDEX: The index of the project folder in the directory path.
+    - DATA_PATH: Path to the output data folder.
+    - OUT_PATH: Path to save the output insights and plots.
+
+Usage:
+    Run the script to analyze denoising performance and generate visualizations for datasets
+    located in the specified `DATA_PATH`. The results will be saved in the `OUT_PATH` directory.
+
+Note:
+    Ensure that the required dependencies are installed and the `src.libs.utils` module is
+    accessible.
+"""
+# -*- coding: utf-8 -*-
+# pylint: disable=wrong-import-position
 # Libs
 import os
 import sys
-import platform
 import json
 import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 from tqdm import tqdm
-from itertools import islice
+# Local imports
+sys.path.append(os.getcwd())
+from src.libs.utils import make_dir
 
 # Global vars
-CURRENT_DIR = os.getcwd()
-FOLDERS = CURRENT_DIR.split(os.sep)
-TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
-CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
-LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'out')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'insights', 'r2', 'denoising_performance')
-
-assert os.path.exists(LIBS_PATH)
-sys.path.append(LIBS_PATH)
-
-# Local imports
-from utils import show_menu, make_dir
+_CURRENT_DIR = os.getcwd()
+_FOLDERS = _CURRENT_DIR.split(os.sep)
+_PROJECT_FOLDER_INDEX = _FOLDERS.index('S-noise-gradient')
+_CURRENT_DIR = os.sep.join(_FOLDERS[:_PROJECT_FOLDER_INDEX+1])
+DATA_PATH = os.path.join(_CURRENT_DIR, 'out')
+OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'insights', 'r2', 'denoising_performance')
 
 
 def list_files(init_folder):
@@ -35,152 +70,189 @@ def list_files(init_folder):
     list: A list of relative file paths.
     """
     archivos = []
-    for root, dirs, files in os.walk(init_folder):
+    for root, _, files in os.walk(init_folder):
         for file in files:
             ruta_absoluta = os.path.join(root, file)
             archivos.append(ruta_absoluta)
     return archivos
 
 
+def get_metrics_data(dataset_path: str, sigma: str = '', is_real: bool = False):
+    """
+    Extracts metrics data for a given dataset.
+
+    Parameters:
+    dataset_path (str): Path to the dataset folder.
+    sigma (str): Noise level filter for synthetic data.
+    is_real (bool): Whether the dataset is real or synthetic.
+
+    Returns:
+    dict: A dictionary containing metrics data for each model.
+    """
+    metrics_dict = {}
+    for model in os.listdir(dataset_path):
+        model_path = os.path.join(dataset_path, model)
+        if not os.path.isdir(model_path):
+            continue
+
+        # Look for the metrics file
+        metrics_file = next(
+            (f for f in os.listdir(model_path) if 'metrics' in f and (sigma in f or is_real)), None
+        )
+        if not metrics_file:
+            continue
+
+        with open(os.path.join(model_path, metrics_file), 'r', encoding='utf-8') as f:
+            file_metrics = json.load(f)
+
+        # Extract relevant metrics
+        metrics_dict[model] = {}
+        if is_real:
+            metrics_dict[model]['noisy'] = file_metrics.get('XAI', {}).get('noisy', {})
+            metrics_dict[model]['denoised'] = file_metrics.get('XAI', {}).get('denoised', {})
+        else:
+            metrics_dict[model]['orig'] = file_metrics.get('XAI', {}).get('orig', {})
+            metrics_dict[model]['noisy'] = file_metrics.get('XAI', {}).get('noisy', {})
+            metrics_dict[model]['denoised'] = file_metrics.get('XAI', {}).get('denoised', {})
+
+    return metrics_dict
+
+
+def process_and_plot_metrics(metrics_dict, data_type, data_origin, dataset, out_path):
+    """
+    Processes metrics data and generates separate plots for each denoising method.
+
+    Parameters:
+    metrics_dict (dict): Dictionary containing metrics data for each model.
+    data_type (str): Type of data (e.g., 'tabular', 'time_series').
+    data_origin (str): Origin of data (e.g., 'real', 'synthetic').
+    dataset (str): Dataset name.
+    out_path (str): Path to save the output plots.
+    """
+    progress_bar = tqdm(total=len(metrics_dict), desc=f"Creating plots for {dataset}", unit="model")
+
+    for model, metrics in metrics_dict.items():
+        # Extract R2 values for different scenarios
+        dfs = []
+        for _, train_test_nomenclature_metrics in metrics.items():
+            if not train_test_nomenclature_metrics:
+                continue  # Skip if scenario metrics are missing or empty
+            # scenario_df = pd.DataFrame.from_dict(train_test_nomenclature_metrics, orient='index')
+            # Extract R2 values for each train_test_comb in the nested dictionary
+            scenario_r2 = {
+                train_test_comb: {
+                    model_name: model_metrics.get('R2')
+                    for model_name, model_metrics in models_metrics.items()
+                    if model_metrics.get('R2') is not None
+                }
+                for train_test_comb, models_metrics in train_test_nomenclature_metrics.items()
+            }
+            scenario_df = pd.DataFrame.from_dict(scenario_r2, orient='index').fillna(0)
+            # Replace negative values with 0
+            scenario_df[scenario_df < 0] = 0
+            dfs.append(scenario_df)
+
+        # Combine all scenarios into a single DataFrame
+        if not dfs:
+            print(f"Warning: No valid data for model '{model}'. Skipping plot.")
+            exit()
+
+        # Combine all scenarios into a single DataFrame
+        df_combined = pd.concat(dfs)
+
+        # Debugging: Check if df_combined is empty
+        if df_combined.empty:
+            print(f"Warning: Combined DataFrame is empty for model '{model}'. Skipping plot.")
+            exit()
+
+        # Create and save the plot for the current denoising method
+        _, ax = plt.subplots(figsize=(12, 8))
+        if df_combined.empty or df_combined.shape[1] == 0:
+            print(f"Warning: Empty DataFrame for model '{model}'. Skipping plot.")
+            continue
+        # Reset index for compatibility with seaborn
+        df_combined = df_combined.T.reset_index().rename(columns={'index': 'Models'})
+
+        # Melt the DataFrame for seaborn
+        df_melted = df_combined.melt(id_vars='Models', var_name='Scenario', value_name='R2')
+
+        # Create the barplot
+        sns.barplot(
+            data=df_melted,
+            x='Models',
+            y='R2',
+            hue='Scenario',
+            ax=ax,
+            palette='ch:start=.5,rot=-0.6,dark=.5,light=.8'
+        )
+
+        # Add values above the bars
+        for container in ax.containers:
+            for bar_var in container:
+                height = bar_var.get_height()
+                ax.text(
+                    bar_var.get_x() + bar_var.get_width() / 2,
+                    height,
+                    f"{height:.2f}",
+                    ha='center',
+                    va='bottom',
+                    fontsize=8
+                )
+
+        # Configure plot title and labels
+        synthetic_str = 'real' if data_origin == 'real' else 'synthetic'
+        dataset_str = dataset.upper()
+        data_str = f'{synthetic_str} {dataset_str}'
+        ax.set_title(
+            f"Denoising method: {model.upper()} - Data: {data_str}\n\
+            R2 score per model and scenario",
+            fontsize=14
+        )
+        ax.set_ylabel("R2 score", fontsize=12)
+        ax.set_xlabel("Models", fontsize=12)
+        ax.set_xticks(range(len(df_combined['Models'])))
+        ax.set_xticklabels(df_combined['Models'], rotation=0, fontsize=12)
+        ax.legend(loc="upper right", bbox_to_anchor=(1.15, 1.22), fontsize=12)
+        ax.grid(axis="y", linestyle="--", alpha=0.7)
+
+        # Save the figure for the current denoising method
+        fig_path = os.path.join(out_path, data_type, data_origin, dataset)
+        make_dir(fig_path)
+        fig_path = os.path.join(fig_path, f'{model}.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
+        progress_bar.update(1)
+
+
+def main():
+    """
+    Main function to analyze denoising performance across datasets and models.
+    """
+    selected_folder = DATA_PATH
+
+    for data_type in ['tabular', 'time_series']:
+        data_type_path = os.path.join(selected_folder, data_type)
+        if not os.path.exists(data_type_path):
+            continue
+
+        for data_origin in ['real', 'synthetic']:
+            origin_path = os.path.join(data_type_path, data_origin)
+            if not os.path.exists(origin_path):
+                continue
+
+            for dataset in os.listdir(origin_path):
+                dataset_path = os.path.join(origin_path, dataset)
+                if not os.path.isdir(dataset_path):
+                    continue
+
+                # Extract metrics data
+                is_real = data_origin == 'real'
+                sigma = '0.05' if not is_real else ''
+                metrics_dict = get_metrics_data(dataset_path, sigma, is_real)
+                # Process and plot metrics
+                process_and_plot_metrics(metrics_dict, data_type, data_origin, dataset, OUT_PATH)
+
 # Main
 if __name__ == "__main__":
-    # Folder or file selection
-    selected_file_folder = show_menu(DATA_PATH)
-    list_of_files = []
-
-    if os.path.isfile(selected_file_folder):
-        list_of_files.append(selected_file_folder)
-
-    else:
-        files = list_files(selected_file_folder)
-        for f in files:
-            if f.endswith('metrics.json'):
-                list_of_files.append(f)
-
-    if not list_of_files:
-        print('There are no files to proccess.')
-        exit()
-
-    # Count the number of plots that are going to be created
-    n_files = 0
-    for file in list_of_files:
-        if 'synthetic' in file:
-            coef = 16
-            if 'time_series' in file:
-                coef = 15
-            n_files += coef
-        else:
-            n_files += 1
-    # n_files = len(list_of_files) - synthetic_files + synthetic_files
-
-    # Iter through the files
-    progress_bar = tqdm(total=n_files, desc="Creating plots")
-    for file in list_of_files:
-        is_real = 'real' in file
-        metrics = None
-        with open(file, 'r') as archivo:
-            metrics = json.load(archivo)
-
-        noise_lvls = []
-        noise_dfs = [metrics]
-        no_noise_df = None
-        orig_tag = 'orig'
-        ood_tag = 'orig_over_denoised'
-        if not is_real:
-            synthetic_dict = dict(islice(metrics.items(), 1, None))
-            noise_lvls = synthetic_dict.keys()
-            noise_dfs = synthetic_dict.values()
-            orig_tag = 'no_noise'
-            ood_tag = 'noisy_over_denoised'
-            no_noise_df = pd.DataFrame(metrics[orig_tag])
-
-        for noise_i, current_df in enumerate(noise_dfs):
-            if is_real:
-                orig_df = pd.DataFrame(current_df[orig_tag])
-            else:
-                orig_df = pd.DataFrame(dict(islice(current_df.items(), len(current_df) - 3)))
-            denoised_dict = metrics['denoised'] if is_real else current_df
-            dod_df = pd.DataFrame(denoised_dict['denoised_over_denoised'])
-            doo_df = pd.DataFrame(denoised_dict['denoised_over_orig'])
-            ood_df = pd.DataFrame(denoised_dict[ood_tag])
-
-            # Lista de DataFrames
-            dfs = [orig_df, dod_df, doo_df, ood_df]
-            if not is_real:
-                dfs.insert(0, no_noise_df)
-
-            # Obtener la intersección de las columnas en todos los DataFrames
-            common_cols = set(dfs[0].columns)
-            for df in dfs[1:]:
-                common_cols &= set(df.columns)  # Intersección de columnas
-
-            # Filtrar DataFrames para mantener solo las columnas en común
-            dfs_filtered = [df[list(common_cols)].loc[['R2']] for df in dfs]
-
-            # Concatenar los DataFrames alineando por columnas comunes
-            df_combined = pd.concat(dfs_filtered, axis=0)
-            df_combined.dropna(axis=1, inplace=True)
-            df_combined = df_combined.clip(lower=0.0)
-
-            # Agregamos etiquetas para cada DataFrame
-            new_index = ['Original', 'Denoised-Denoised', 'Denoised-Original', 'Original-Denoised']
-            if not is_real:
-                new_index.insert(1, 'Noisy')
-            df_combined.index = new_index
-            df_combined = df_combined.sort_index(axis=1)
-
-            # Crear y guardar la gráfica
-            fig, ax = plt.subplots(figsize=(10, 6))
-            bar_width = 0.7
-            if df_combined.empty or df_combined.shape[1] == 0:
-                raise ValueError(f"File: {file}. Empty Dataframe.")
-            df_combined.T.plot(kind='bar', ax=ax, width=bar_width, colormap="viridis")
-
-            # Añadir valores encima de las barras
-            for container in ax.containers:
-                ax.bar_label(container, fmt="%.2f", fontsize=8, padding=3)
-
-            path_parts = file.split(os.path.sep)
-            denoising_method = path_parts[-1].split('_')[0]
-            dataset = path_parts[-2]
-            real_or_synthetic = path_parts[-3]
-            tabular_or_ts = path_parts[-4]
-            # Guardar la figura
-            synthetic_str = 'real'
-            dataset_str = dataset.upper()
-            noise_str = ''
-            if not is_real:
-                synthetic_str = 'synthetic'
-
-                noise_lvl = (noise_i+1) * 0.01
-                noise_str = f'_s{noise_lvl}'
-                if noise_lvl == 0.16:
-                    noise_str = '_mix'
-
-                if 'time_series' in file:
-                    dataset_str = ''
-                    dataset = denoising_method
-                    real_or_synthetic = path_parts[-2]
-                    tabular_or_ts = path_parts[-3]
-
-            data_str = f'{synthetic_str} {dataset_str}{noise_str}'
-            # Configuración de la gráfica
-            ax.set_title(
-                f"Denoising method: {denoising_method.upper()} - Data: {data_str}\nR2 score per model",
-                fontsize=14
-            )
-            ax.set_ylabel("R2 score", fontsize=12)
-            ax.set_xlabel("Models", fontsize=12)
-            ax.set_xticklabels(df_combined.columns, rotation=0, fontsize=11)
-            ax.legend(loc="upper right", bbox_to_anchor=(1.15, 1.22), fontsize=10)
-            ax.grid(axis="y", linestyle="--", alpha=0.7)
-
-            denoising_method += f'{noise_str}.png'
-
-            fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic, dataset)
-            make_dir(fig_path)
-            fig_path = os.path.join(fig_path, denoising_method)
-            plt.savefig(fig_path, dpi=300, bbox_inches="tight")
-            plt.close()
-
-            progress_bar.update(1)
+    main()
