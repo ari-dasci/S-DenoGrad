@@ -1,195 +1,186 @@
 # Libs
 import os
 import sys
-import platform
 import json
 import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
 from tqdm import tqdm
-from itertools import islice
+# Local imports
+sys.path.append(os.getcwd())
+from src.libs.utils import make_dir
 
 # Global vars
-CURRENT_DIR = os.getcwd()
-FOLDERS = CURRENT_DIR.split(os.sep)
-TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
-CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
-LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'out')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'insights', 'r2', 'methods_comparison')
-
-assert os.path.exists(LIBS_PATH)
-sys.path.append(LIBS_PATH)
-
-# Local imports
-from utils import show_menu, make_dir
-
-
-def list_files(init_folder):
-    """
-    Recursively lists all files in the given directory and its subdirectories with relative paths.
-
-    Parameters:
-    init_folder (str): The initial directory path.
-
-    Returns:
-    list: A list of relative file paths.
-    """
-    archivos = []
-    for root, dirs, files in os.walk(init_folder):
-        for file in files:
-            ruta_absoluta = os.path.join(root, file)
-            archivos.append(ruta_absoluta)
-    return archivos
-
+_CURRENT_DIR = os.getcwd()
+_FOLDERS = _CURRENT_DIR.split(os.sep)
+_PROJECT_FOLDER_INDEX = _FOLDERS.index('S-noise-gradient')
+_CURRENT_DIR = os.sep.join(_FOLDERS[:_PROJECT_FOLDER_INDEX+1])
+DATA_PATH = os.path.join(_CURRENT_DIR, 'out')
+OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'insights', 'r2', 'methods_comparison')
 
 # Main
 if __name__ == "__main__":
-    # Folder or file selection
-    selected_folder = show_menu(DATA_PATH)
-    list_of_files = []
-
-    # Check that a folder has been selected.
-    if os.path.isfile(selected_folder):
-        raise('A folder must be selected.')
-
     noise_lvl = 0.05
-    # Walk through the folder until reach a leaf folder.
-    for root, dirs, files in os.walk(selected_folder):
-        if dirs: continue
 
-        # Stablish if the folder contains real/synthetic and tabular/time_series data.
-        is_real = 'real' in root
-        is_tabular = 'tabular' in root
+    # Walk through the folder structure
+    for data_type in ['tabular', 'time_series']:
+        data_type_path = os.path.join(DATA_PATH, data_type)
+        if not os.path.exists(data_type_path):
+            continue
 
-        # Read the gradient metrics to compare it with the others.
-        gradient_i = [f for f in files if 'gradient' in f and 'metrics' in f][0]
-        gradient_file = os.path.join(root, gradient_i)
-        with open(gradient_file, 'r') as f:
-            gradient_metrics = json.load(f)
+        for data_origin in ['real', 'synthetic']:
+            origin_path = os.path.join(data_type_path, data_origin)
+            if not os.path.exists(origin_path):
+                continue
 
-        # Get the denoised_over_denoised and orig_over_denoised metrics from gradient file.
-        ood_tag = 'orig_over_denoised'
-        denoised_gradient_metrics = {}
-        if not is_real:
-            ood_tag = 'noisy_over_denoised'
-            denoised_gradient_metrics = dict(islice(gradient_metrics.items(), 1, None))
-            denoised_gradient_metrics = denoised_gradient_metrics[f'{noise_lvl}']
-        else:
-            denoised_gradient_metrics = gradient_metrics['denoised']
-    
-        dod_gradient_df = pd.DataFrame(denoised_gradient_metrics['denoised_over_denoised'])
-        ood_gradient_df = pd.DataFrame(denoised_gradient_metrics[ood_tag])
+            is_real = data_origin == 'real'
+            for dataset in os.listdir(origin_path):
+                dataset_path = os.path.join(origin_path, dataset)
+                if not os.path.isdir(dataset_path):
+                    continue
 
-        # Go through all the files to make the comparison with gradient metrics.
-        for file in tqdm(files):
-            method = file.split('_')[0]
-            if 'gradient' in method or 'metrics' not in file: continue
+                gradient_metrics = {}
+                for method in os.listdir(dataset_path):
+                    if method != 'dlnr':
+                        continue
 
-            with open(os.path.join(root,file), 'r') as f:
-                file_metrics = json.load(f)
+                    method_path = os.path.join(dataset_path, method)
+                    if not os.path.isdir(method_path):
+                        continue
 
-            # Get the denoised_over_denoised and orig_over_denoised metrics from file file.
-            ood_tag = 'orig_over_denoised'
-            denoised_file_metrics = {}
-            if not is_real:
-                ood_tag = 'noisy_over_denoised'
-                denoised_file_metrics = dict(islice(file_metrics.items(), 1, None))
-                denoised_file_metrics = denoised_file_metrics[f'{noise_lvl}']
-            else:
-                denoised_file_metrics = file_metrics['denoised']
-            
-            dod_file_df = pd.DataFrame(denoised_file_metrics['denoised_over_denoised'])
-            ood_file_df = pd.DataFrame(denoised_file_metrics[ood_tag])
+                    # Read the metrics files
+                    gradient_files = [f for f in os.listdir(method_path) if 'metrics' in f]
+                    if not gradient_files:
+                        continue
 
-            # Lista de DataFrames
-            dfs = [dod_gradient_df, dod_file_df, ood_gradient_df, ood_file_df]
+                    gradient_file = os.path.join(method_path, gradient_files[0])
+                    with open(gradient_file, 'r', encoding='utf-8') as f:
+                        gradient_metrics_file = json.load(f)
 
-            # Obtener la intersección de las columnas en todos los DataFrames
-            common_cols = set(dfs[0].columns)
-            for df in dfs[1:]:
-                common_cols &= set(df.columns)  # Intersección de columnas
+                    # Initialize gradient_metrics as a nested dictionary
+                    gradient_metrics = gradient_metrics_file['XAI']
+                    gradient_metrics = {
+                        train_test_key: {
+                            model_key: metrics.get('R2') if metrics.get('R2') > 0 else 0
+                            for model_key, metrics in model_dict.items()
+                            if metrics.get('R2') is not None
+                        }
+                        for noisy_key, train_test_dict in gradient_metrics.items()
+                        for train_test_key, model_dict in train_test_dict.items()
+                    }
 
-            # Filtrar DataFrames para mantener solo las columnas en común
-            dfs_filtered = [df[list(common_cols)].loc[['R2']] for df in dfs]
-            
-            # Concatenar los DataFrames alineando por columnas comunes
-            df_combined = pd.concat(dfs_filtered, axis=0)
-            df_combined.dropna(axis=1, inplace=True)
-            df_combined = df_combined.clip(lower=0.0)
+                    # gradient_metrics_df.columns = ['Train-Test', 'Model', 'R2']
+                    gradient_metrics_df = pd.DataFrame(gradient_metrics).reset_index().melt(
+                        id_vars='index',
+                        var_name='train_test',
+                        value_name='R2'
+                    )
+                    gradient_metrics_df['method'] = 'DLNR'
 
-            # Agregamos etiquetas para cada DataFrame
-            noise_tag = 'Original'
-            if not is_real:
-                noise_tag = 'Noisy'
+                for method in tqdm(os.listdir(dataset_path)):
+                    if method == 'dlnr':
+                        continue
 
-            new_index = [
-                'Ours: Denoised-Denoised',
-                f'{method.upper()}: Denoised-Denoised',
-                f'Ours: {noise_tag}-Denoised',
-                f'{method.upper()}: {noise_tag}-Denoised'
-            ]
-            df_combined.index = new_index
-            df_combined = df_combined.sort_index(axis=1)
+                    method_path = os.path.join(dataset_path, method)
+                    if not os.path.isdir(method_path):
+                        continue
 
-            # Crear y guardar la gráfica
-            fig, ax = plt.subplots(figsize=(10, 6))
-            bar_width = 0.7
-            if df_combined.empty or df_combined.shape[1] == 0:
-                raise ValueError(f"File: {file}. Empty Dataframe.")
+                    # Read the metrics files
+                    files = [f for f in os.listdir(method_path) if 'metrics' in f]
+                    if not files: 
+                        continue
 
-            # Obtener la lista de colores de tab20c en orden secuencial
-            tab20c_colors = plt.get_cmap("tab20").colors  # Lista con 20 colores
+                    file = os.path.join(method_path, files[0])
+                    with open(file, 'r', encoding='utf-8') as f:
+                        metrics_file = json.load(f)
 
-            # Asignar colores manualmente en orden a cada serie de df_combined
-            custom_colors = tab20c_colors[:df_combined.shape[1]]  # Tantos colores como columnas tenga df_combined
+                    # Extract the metrics
+                    metrics = metrics_file['XAI']
+                    metrics = {
+                        train_test_key: {
+                            model_key: metrics.get('R2') if metrics.get('R2') > 0 else 0
+                            for model_key, metrics in model_dict.items()
+                            if metrics.get('R2') is not None
+                        }
+                        for noisy_key, train_test_dict in metrics.items()
+                        for train_test_key, model_dict in train_test_dict.items()
+                    }
 
-            df_combined.T.plot(
-                kind='bar',
-                ax=ax,
-                width=bar_width,
-                color=custom_colors
-            )
+                    metrics_df = pd.DataFrame(metrics).reset_index().melt(
+                        id_vars='index',
+                        var_name='train_test',
+                        value_name='R2'
+                    )
+                    metrics_df['method'] = method.upper()
 
-            # Añadir valores encima de las barras
-            for container in ax.containers:
-                ax.bar_label(container, fmt="%.2f", fontsize=8, padding=3)
+                    # Combinar ambos DataFrames
+                    df_combined = pd.concat([gradient_metrics_df, metrics_df])
+                    df_combined.rename(columns={'index': 'model'}, inplace=True)
 
-            path_parts = os.path.join(root, file).split(os.path.sep)
-            denoising_method = path_parts[-1].split('_')[0]
-            dataset = path_parts[-2]
-            real_or_synthetic = path_parts[-3]
-            tabular_or_ts = path_parts[-4]
-            # Guardar la figura
-            synthetic_str = 'real'
-            dataset_str = dataset.upper()
-            noise_str = ''
-            if not is_real:
-                synthetic_str = 'synthetic'
-                noise_str = f'_s{noise_lvl}'
+                    # Filtrar las entradas que no sean 'train_noisy_test_noisy'
+                    df_combined = df_combined[df_combined['train_test'] != 'train_noisy_test_noisy']
 
-                if 'time_series' in file:
-                    dataset_str = ''
-                    dataset = denoising_method
-                    real_or_synthetic = path_parts[-2]
-                    tabular_or_ts = path_parts[-3]
+                    # Separar en diferentes DataFrames según el valor de 'train_test'
+                    train_test_groups = df_combined.groupby('train_test')
 
-            data_str = f'{synthetic_str} {dataset_str}{noise_str}'
-            # Configuración de la gráfica
-            ax.set_title(
-                f"Gradient VS {method.upper()} - Data: {data_str}\nR2 score comparison",
-                fontsize=14
-            )
-            ax.set_ylabel("R2 score", fontsize=12)
-            ax.set_xlabel("Models", fontsize=12)
-            ax.set_xticklabels(df_combined.columns, rotation=0, fontsize=11)
-            ax.legend(loc="upper right", bbox_to_anchor=(1.15, 1.22), fontsize=10)
-            ax.grid(axis="y", linestyle="--", alpha=0.7)
+                    # Crear una gráfica de barras para cada grupo
+                    for train_test, group_df in train_test_groups:
+                        plt.figure(figsize=(16, 10))
+                        sns.barplot(
+                            data=group_df,
+                            x='model',
+                            y='R2',
+                            hue='method',
+                            palette='tab10',
+                            dodge=True,
+                            errorbar=None
+                        )
 
-            denoising_method += f'{noise_str}.png'
+                        # Añadir etiquetas encima de las barras
+                        for container in plt.gca().containers:
+                            plt.gca().bar_label(container, fmt='%.2f', fontsize=10, padding=3)
 
-            fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic, dataset)
-            make_dir(fig_path)
-            fig_path = os.path.join(fig_path, denoising_method)
-            plt.savefig(fig_path, dpi=300, bbox_inches="tight")
-            plt.close()
+                        # Añadir etiquetas y título
+                        plt.title(f'R2 Scores by Model and Method ({train_test})', fontsize=16)
+                        plt.ylabel('R2 Score', fontsize=12)
+                        plt.xlabel('Model', fontsize=12)
+                        plt.legend(title='Method', fontsize=10, title_fontsize=12)
+                        plt.grid(axis='y', linestyle='--', alpha=0.7)
 
+                        # Guardar la figura
+                        fig_path = os.path.join(OUT_PATH, data_type, data_origin, dataset, train_test)
+                        make_dir(fig_path)
+                        fig_path = os.path.join(fig_path, f'{method}.png')
+                        plt.savefig(fig_path, dpi=300, bbox_inches="tight")
+                        plt.close()
+
+                    # # Crear la gráfica de barras
+                    # plt.figure(figsize=(16, 10))
+                    # sns.barplot(
+                    #     data=df_combined,
+                    #     x='model',
+                    #     y='R2',
+                    #     hue='method',
+                    #     palette='tab10',
+                    #     dodge=True,
+                    #     errorbar=None
+                    # )
+
+                    # # Añadir etiquetas encima de las barras
+                    # for container in plt.gca().containers:
+                    #     plt.gca().bar_label(container, fmt='%.2f', fontsize=10, padding=3)
+
+                    # # Añadir etiquetas y título
+                    # plt.title('R2 Scores by Model, Method, and Train-Test Configuration',
+                    #           fontsize=16)
+                    # plt.ylabel('R2 Score', fontsize=12)
+                    # plt.xlabel('Model', fontsize=12)
+                    # plt.legend(title='Method', fontsize=10, title_fontsize=12)
+                    # plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+                    # # Save the figure
+                    # fig_path = os.path.join(OUT_PATH, data_type, data_origin, dataset)
+                    # make_dir(fig_path)
+                    # fig_path = os.path.join(fig_path, f'{method}.png')
+                    # plt.savefig(fig_path, dpi=300, bbox_inches="tight")
+                    # plt.close()

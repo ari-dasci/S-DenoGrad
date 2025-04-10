@@ -14,7 +14,6 @@ Modules:
     - src.libs.utils: Contains utility functions, such as `make_dir`.
 
 Functions:
-    - list_files(init_folder): Recursively lists all files in a directory and its subdirectories.
     - get_metrics_data(dataset_path, sigma='', is_real=False): Extracts metrics data for a
         given dataset.
     - process_and_plot_metrics(metrics_dict, data_type, data_origin, dataset, out_path): Processes
@@ -57,24 +56,6 @@ _PROJECT_FOLDER_INDEX = _FOLDERS.index('S-noise-gradient')
 _CURRENT_DIR = os.sep.join(_FOLDERS[:_PROJECT_FOLDER_INDEX+1])
 DATA_PATH = os.path.join(_CURRENT_DIR, 'out')
 OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'insights', 'r2', 'denoising_performance')
-
-
-def list_files(init_folder):
-    """
-    Recursively lists all files in the given directory and its subdirectories with relative paths.
-
-    Parameters:
-    init_folder (str): The initial directory path.
-
-    Returns:
-    list: A list of relative file paths.
-    """
-    archivos = []
-    for root, _, files in os.walk(init_folder):
-        for file in files:
-            ruta_absoluta = os.path.join(root, file)
-            archivos.append(ruta_absoluta)
-    return archivos
 
 
 def get_metrics_data(dataset_path: str, sigma: str = '', is_real: bool = False):

@@ -573,7 +573,7 @@ class BaseExperiment:
                     self.original_data['histogram'][col],
                     self.denoised_data['histogram'][col]
                 )
-                self.metrics_dict['KL_divergence']['orig_noisy'][col] = kl_divergence
+                self.metrics_dict['KL_divergence']['orig_denoised'][col] = kl_divergence
 
             # Calculate KL divergence between denoised and noisy data
             kl_divergence = entropy(

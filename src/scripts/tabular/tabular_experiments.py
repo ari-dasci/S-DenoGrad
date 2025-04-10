@@ -408,7 +408,7 @@ def dlnr(noisy_data: dict,
     df_denoised[input_vars], df_denoised['y'], x_gradients, y_gradients = dlnr_model.transform(
         nrr=0.05,
         nr_threshold=0.01,
-        max_epochs=200,
+        max_epochs=1000,
         plot_progress=False,
         path_to_save_imgs=None,
         save_gradients=save_gradients

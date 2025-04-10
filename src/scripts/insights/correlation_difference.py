@@ -6,9 +6,6 @@ to an output directory.
 
 Functions:
 ----------
-- list_files(init_folder: str) -> list:
-    Recursively lists all files in the given directory and its subdirectories 
-    with relative paths.
 
 - validate_folder(selected_folder: str):
     Validates that the selected path is a folder. Raises a ValueError if the 
@@ -66,24 +63,6 @@ _PROJECT_FOLDER_INDEX = _FOLDERS.index('S-noise-gradient')
 _CURRENT_DIR = os.sep.join(_FOLDERS[:_PROJECT_FOLDER_INDEX+1])
 DATA_PATH = os.path.join(_CURRENT_DIR, 'out')
 OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'insights', 'correlation')
-
-
-def list_files(init_folder: str):
-    """
-    Recursively lists all files in the given directory and its subdirectories with relative paths.
-
-    Parameters:
-    init_folder (str): The initial directory path.
-
-    Returns:
-    list: A list of relative file paths.
-    """
-    archivos = []
-    for root, _, files in os.walk(init_folder):
-        for file in files:
-            ruta_absoluta = os.path.join(root, file)
-            archivos.append(ruta_absoluta)
-    return archivos
 
 
 def validate_folder(selected_folder: str):

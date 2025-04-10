@@ -3,6 +3,7 @@
 #SBATCH --partition=dgx2,dgx,dios
 #SBATCH -c 16
 #SBATCH --gres=gpu:1
+#SBATCH --mem-per-gpu=20G
 #SBATCH --array=0-3%4
 
 source /opt/anaconda/etc/profile.d/conda.sh
