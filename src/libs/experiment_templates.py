@@ -517,19 +517,25 @@ class BaseExperiment:
                             data_dict['df'][col],
                             npartitions=len(data_dict['df'][col])
                         )
-                        if 'ECL' not in self.data_path:
+                        if (
+                            'ECL' not in self.data_path and # ts datset
+                            'WTH' not in self.data_path and # ts datset
+                            'rt_iot2022' not in self.data_path): # tab datset
+                            print(f'Numpy histogram: {self.data_path} - {col}')
                             hist, bin_edges = np.histogram(
                                 data_dict['df'][col],
                                 bins=bins,
                                 density=True
                             )
                         else:
+                            print(f'DASK histogram: {self.data_path} - {col}')
                             hist, bin_edges = da.histogram(
                                 dask_data,
                                 bins=50,
                                 density=True,
                                 range=(data_dict['df'][col].min(), data_dict['df'][col].max())
                             )
+                            hist = hist.compute()
                         data_dict['histogram'][col] = hist + 1e-10
                         histogram_bins[col] = len(bin_edges) - 1
 
@@ -597,10 +603,9 @@ class BaseExperiment:
         for data_dict in [self.original_data, self.noisy_data, self.denoised_data]:
             if 'df' in data_dict:
                 if data_dict['df'] is not None:
-                    data_dict['correlation'] = data_dict['df'].corr()
-                    # Calculate the mean correlation
-                    mean_corr = np.nanmean(data_dict['correlation'])
-                    data_dict['mean_correlation'] = mean_corr
+                    corr_matrix = data_dict['df'].corr()
+                    # Calculate the correlation mean
+                    data_dict['mean_correlation'] = np.nanmean(corr_matrix)
 
     def _calc_correlation_difference_between_datasets(self) -> None:
         """
@@ -655,69 +660,68 @@ class BaseExperiment:
     def _calc_mean_distances_between_datsets(self) -> None:
         """
         Calculate the mean distances between original, noisy, and denoised datasets.
-        This method computes the mean Euclidean distances between:
-        - Original and noisy data points.
-        - Original and denoised data points.
-        - Noisy and denoised data points.
-        The results are stored in the `metrics_dict` under the key `dataset_distances`.
-        Raises:
-            ValueError: If the shapes of noisy and denoised data do not match.
-            ValueError: If the shapes of original and denoised data do not match
-                (when original data is provided).
-        Notes:
-            - If `original_data` is not provided, the distances involving original data will be
-                set to `None`.
-            - The method assumes that the data points are stored in the 'df' key of the respective
-                dictionaries.
-        Updates:
-            self.metrics_dict['dataset_distances']: A dictionary containing:
-                - 'mean_original_noisy_distance': Mean distance between original and
-                    noisy data points.
-                - 'mean_original_denoised_distance': Mean distance between original and
-                    denoised data points.
-                - 'mean_denoised_noisy_distance': Mean distance between noisy and
-                    denoised data points.
+        This method computes the mean distances between the following pairs of datasets:
+        1. Original data vs. Noisy data
+        2. Original data vs. Denoised data
+        3. Noisy data vs. Denoised data
+        The results are stored in the `metrics_dict['dataset_distances']` dictionary 
+        with the following keys:
+        - 'mean_original_noisy_distance': Mean distance between original and noisy datasets.
+        - 'mean_original_denoised_distance': Mean distance between original and denoised datasets.
+        - 'mean_denoised_noisy_distance': Mean distance between noisy and denoised datasets.
+        If the original dataset is not available, the distances involving the original 
+        dataset will be set to `None`.
+        Returns:
+            None
         """
-        # Calculate the mean distance between original, noisy and denoised data points
-        original_points = self.original_data['df'].values if 'df' in self.original_data else None
-        noisy_points = self.noisy_data['df'].values
-        denoised_points = self.denoised_data['df'].values
+        # Convert data to Dask arrays for efficient computation
+        original_points = (
+            da.from_array(self.original_data['df'].values) if 'df' in self.original_data else None
+        )
+        noisy_points = da.from_array(self.noisy_data['df'].values)
+        denoised_points = da.from_array(self.denoised_data['df'].values)
 
+        # For time-series data, exclude the last row to align shifted target variables
         if self.is_ts:
-            original_points = original_points[:-1] if original_points is not None else None
+            if original_points is not None:
+                original_points = original_points[:-1]
             noisy_points = noisy_points[:-1]
+            denoised_points = denoised_points[:-1]
 
+        # Ensure noisy and denoised data have the same shape
         if noisy_points.shape != denoised_points.shape:
             raise ValueError("Noisy and denoised data must have the same shape.")
 
+        # Ensure original and denoised data have the same shape if original data exists
         if original_points is not None and original_points.shape != denoised_points.shape:
             raise ValueError("Original and denoised data must have the same shape.")
 
-        if 'distances' not in self.metrics_dict:
+        # Initialize the dataset_distances dictionary in metrics_dict if not already present
+        if 'dataset_distances' not in self.metrics_dict:
             self.metrics_dict['dataset_distances'] = {}
 
+        # Calculate mean distances between original and noisy data if original data exists
         if original_points is not None:
-            original_noisy_distances = np.linalg.norm(original_points - noisy_points, axis=1)
-            mean_original_noisy_distance = np.mean(original_noisy_distances)
+            original_noisy_distances = da.linalg.norm(original_points - noisy_points, axis=1)
+            mean_original_noisy_distance = original_noisy_distances.mean().compute()
             self.metrics_dict['dataset_distances'][
-                'mean_original_noisy_distance'
-            ] = mean_original_noisy_distance
+                'mean_original_noisy_distance'] = mean_original_noisy_distance
 
-            original_denoised_distances = np.linalg.norm(original_points - denoised_points, axis=1)
-            mean_original_denoised_distance = np.mean(original_denoised_distances)
+            # Calculate mean distances between original and denoised data
+            original_denoised_distances = da.linalg.norm(original_points - denoised_points, axis=1)
+            mean_original_denoised_distance = original_denoised_distances.mean().compute()
             self.metrics_dict['dataset_distances'][
-                'mean_original_denoised_distance'
-            ] = mean_original_denoised_distance
+                'mean_original_denoised_distance'] = mean_original_denoised_distance
         else:
+            # If original data is not available, set distances involving original data to None
             self.metrics_dict['dataset_distances']['mean_original_noisy_distance'] = None
             self.metrics_dict['dataset_distances']['mean_original_denoised_distance'] = None
 
-        # Calculate the mean distance between noisy and denoised data points
-        denoised_noisy_distances = np.linalg.norm(noisy_points - denoised_points, axis=1)
-        mean_denoised_noisy_distance = np.mean(denoised_noisy_distances)
+        # Calculate mean distances between noisy and denoised data
+        denoised_noisy_distances = da.linalg.norm(noisy_points - denoised_points, axis=1)
+        mean_denoised_noisy_distance = denoised_noisy_distances.mean().compute()
         self.metrics_dict['dataset_distances'][
-            'mean_denoised_noisy_distance'
-        ] = mean_denoised_noisy_distance
+            'mean_denoised_noisy_distance'] = mean_denoised_noisy_distance
 
     def calculate_metrics(self):
         """
@@ -731,12 +735,22 @@ class BaseExperiment:
         between datasets in the experiment.
         """
         # Auxiliary function to calculate metrics
+        if self.verbose:
+            print(" » CORRELATION « ")
         self._calc_correlation()
+        if self.verbose:
+            print(" » HISTOGRAMS « ")
         self._calc_histograms()
 
         # Calculate metrics
+        if self.verbose:
+            print(" » KL DIVERGENCE « ")
         self._calc_correlation_difference_between_datasets()
+        if self.verbose:
+            print(" » CORRELATION DIFF « ")
         self._calc_kullback_leibler_divergence()
+        if self.verbose:
+            print(" » DISTANCES « ")
         self._calc_mean_distances_between_datsets()
 
     def save_results(self, add_noise: bool = False, sigma: float = 0.02) -> None:
@@ -845,41 +859,41 @@ class BaseExperiment:
         """
         # Load data
         if self.verbose:
-            print("Loading data...")
+            print("\n » Loading data...")
         self.load_data(data_file=data_file, y_col_name=y_col_name)
 
         # Add noise to the data if specified
         if add_noise:
             if self.verbose:
-                print("Adding noise to the data...")
+                print("\n » Adding noise to the data...")
             self.add_noise(sigma=sigma)
 
         # Denoise the data
         if self.verbose:
-            print("Denoising the data...")
+            print("\n » Denoising the data...")
         self.perform_denoising(denoising_method, **denoising_method_params)
 
         # Fit the XAI models on the original, noisy and denoised data
         if 'df' in self.original_data:
             if self.original_data['df'] is not None:
                 if self.verbose:
-                    print("Performing XAI benchmark trained with original data...")
+                    print("\n » Performing XAI benchmark trained with original data...")
                 self.perform_original_xai_benchmark(model_params=xai_models_params)
         if self.verbose:
-            print("Performing XAI benchmark trained with noisy data...")
+            print("\n » Performing XAI benchmark trained with noisy data...")
         self.perform_noisy_xai_benchmark(model_params=xai_models_params)
         if self.verbose:
-            print("Performing XAI benchmark trained with denoised data...")
+            print("\n » Performing XAI benchmark trained with denoised data...")
         self.perform_denoised_xai_benchmark(model_params=xai_models_params)
 
         # Calculate metrics
         if self.verbose:
-            print("Calculating metrics...")
+            print("\n » Calculating metrics...")
         self.calculate_metrics()
 
         # Save results
         if self.verbose:
-            print("Saving results...")
+            print("\n » Saving results...")
         self.save_results(add_noise=add_noise, sigma=sigma)
 
 

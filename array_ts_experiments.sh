@@ -4,7 +4,7 @@
 #SBATCH -c 16
 #SBATCH --gres=gpu:1
 #SBATCH --mem-per-gpu=20G
-#SBATCH --array=0-15%4
+#SBATCH --array=0-13%4
 
 source /opt/anaconda/etc/profile.d/conda.sh
 conda activate /mnt/homeGPU/JJavierAR/repsol_env/
@@ -12,7 +12,7 @@ export TFHUB_CACHE_DIR=.
 export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 
 denoising_methods=(
-    "dae"
+    # "dae"
     "dlnr"
     "emd"
     "kalman_filter"

@@ -1,3 +1,51 @@
+"""
+This script generates comparative visualizations of R2 scores for different models and methods
+based on metrics extracted from JSON files. The script processes data for both tabular and 
+time-series datasets, distinguishing between real and synthetic data origins.
+
+Modules:
+    - os: Provides functions for interacting with the operating system.
+    - sys: Provides access to system-specific parameters and functions.
+    - json: Handles JSON file reading and writing.
+    - matplotlib.pyplot: Used for creating visualizations.
+    - seaborn: Provides a high-level interface for drawing attractive statistical graphics.
+    - pandas: Used for data manipulation and analysis.
+    - tqdm: Displays progress bars for loops.
+    - src.libs.utils.make_dir: Utility function for creating directories.
+
+Global Variables:
+    - _CURRENT_DIR: The current working directory.
+    - _FOLDERS: List of folder names in the current directory path.
+    - _PROJECT_FOLDER_INDEX: Index of the project folder in the directory path.
+    - DATA_PATH: Path to the output data directory.
+    - OUT_PATH: Path to the output directory for saving visualizations.
+
+Main Functionality:
+    - Iterates through data types ('tabular', 'time_series') and data origins ('real', 'synthetic').
+    - Reads R2 metrics from JSON files for each dataset and method.
+    - Processes metrics to filter and structure data for visualization.
+    - Generates bar plots comparing R2 scores across models and methods for different train-test splits.
+    - Saves the generated plots to the specified output directory.
+
+Key Steps:
+    1. Traverse the folder structure to locate datasets and methods.
+    2. Read and process metrics files for each method.
+    3. Combine metrics from different methods into a single DataFrame.
+    4. Filter and group data based on train-test splits.
+    5. Create bar plots for each train-test split, showing R2 scores by model and method.
+    6. Save the plots to the appropriate output directory.
+
+Usage:
+    Run the script directly to generate and save the visualizations. Ensure that the required
+    folder structure and JSON metrics files are present in the specified paths.
+
+Notes:
+    - The script assumes a specific folder structure and naming convention for metrics files.
+    - The 'dlnr' method is treated as a baseline and processed separately.
+    - The script skips datasets or methods if required files or directories are missing.
+"""
+# -*- coding: utf-8 -*-
+# pylint: disable=wrong-import-position
 # Libs
 import os
 import sys
@@ -20,7 +68,7 @@ OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'insights', 'r2', 'methods_comparis
 
 # Main
 if __name__ == "__main__":
-    noise_lvl = 0.05
+    NOISE_LVL = '0.05'
 
     # Walk through the folder structure
     for data_type in ['tabular', 'time_series']:
@@ -34,6 +82,8 @@ if __name__ == "__main__":
                 continue
 
             is_real = data_origin == 'real'
+            if is_real:
+                NOISE_LVL = ''
             for dataset in os.listdir(origin_path):
                 dataset_path = os.path.join(origin_path, dataset)
                 if not os.path.isdir(dataset_path):
@@ -49,7 +99,10 @@ if __name__ == "__main__":
                         continue
 
                     # Read the metrics files
-                    gradient_files = [f for f in os.listdir(method_path) if 'metrics' in f]
+                    gradient_files = [
+                        f for f in os.listdir(method_path)
+                        if 'metrics' in f and NOISE_LVL in f
+                    ]
                     if not gradient_files:
                         continue
 
@@ -86,8 +139,11 @@ if __name__ == "__main__":
                         continue
 
                     # Read the metrics files
-                    files = [f for f in os.listdir(method_path) if 'metrics' in f]
-                    if not files: 
+                    files = [
+                        f for f in os.listdir(method_path)
+                        if 'metrics' in f and NOISE_LVL in f
+                    ]
+                    if not files:
                         continue
 
                     file = os.path.join(method_path, files[0])
@@ -148,39 +204,9 @@ if __name__ == "__main__":
                         plt.grid(axis='y', linestyle='--', alpha=0.7)
 
                         # Guardar la figura
-                        fig_path = os.path.join(OUT_PATH, data_type, data_origin, dataset, train_test)
+                        fig_path = os.path.join(OUT_PATH, data_type, data_origin, dataset,
+                                                train_test)
                         make_dir(fig_path)
                         fig_path = os.path.join(fig_path, f'{method}.png')
                         plt.savefig(fig_path, dpi=300, bbox_inches="tight")
                         plt.close()
-
-                    # # Crear la gráfica de barras
-                    # plt.figure(figsize=(16, 10))
-                    # sns.barplot(
-                    #     data=df_combined,
-                    #     x='model',
-                    #     y='R2',
-                    #     hue='method',
-                    #     palette='tab10',
-                    #     dodge=True,
-                    #     errorbar=None
-                    # )
-
-                    # # Añadir etiquetas encima de las barras
-                    # for container in plt.gca().containers:
-                    #     plt.gca().bar_label(container, fmt='%.2f', fontsize=10, padding=3)
-
-                    # # Añadir etiquetas y título
-                    # plt.title('R2 Scores by Model, Method, and Train-Test Configuration',
-                    #           fontsize=16)
-                    # plt.ylabel('R2 Score', fontsize=12)
-                    # plt.xlabel('Model', fontsize=12)
-                    # plt.legend(title='Method', fontsize=10, title_fontsize=12)
-                    # plt.grid(axis='y', linestyle='--', alpha=0.7)
-
-                    # # Save the figure
-                    # fig_path = os.path.join(OUT_PATH, data_type, data_origin, dataset)
-                    # make_dir(fig_path)
-                    # fig_path = os.path.join(fig_path, f'{method}.png')
-                    # plt.savefig(fig_path, dpi=300, bbox_inches="tight")
-                    # plt.close()

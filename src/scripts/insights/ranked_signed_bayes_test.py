@@ -2,232 +2,187 @@
 import os
 import sys
 import json
-from itertools import islice
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import baycomp
 import numpy as np
+# Local imports
+sys.path.append(os.getcwd())
+from src.libs.utils import make_dir
 
 # Global vars
-CURRENT_DIR = os.getcwd()
-FOLDERS = CURRENT_DIR.split(os.sep)
-TESIS_FOLDER_INDEX = FOLDERS.index('S-noise-gradient')
-CURRENT_DIR = os.sep.join(FOLDERS[:TESIS_FOLDER_INDEX+1])
-LIBS_PATH = os.path.join(CURRENT_DIR, 'src', 'libs')
-DATA_PATH = os.path.join(CURRENT_DIR, 'out')
-OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'insights', 'bayes')
-
-assert os.path.exists(LIBS_PATH)
-sys.path.append(LIBS_PATH)
-
-# Local imports
-from utils import show_menu, make_dir
-
-
-def list_files(init_folder):
-    """
-    Recursively lists all files in the given directory and its subdirectories with relative paths.
-
-    Parameters:
-    init_folder (str): The initial directory path.
-
-    Returns:
-    list: A list of relative file paths.
-    """
-    archives = []
-    for _root, _, _files in os.walk(init_folder):
-        for _file in _files:
-            absolute_path = os.path.join(_root, _file)
-            archives.append(absolute_path)
-    return archives
-
+_CURRENT_DIR = os.getcwd()
+_FOLDERS = _CURRENT_DIR.split(os.sep)
+_PROJECT_FOLDER_INDEX = _FOLDERS.index('S-noise-gradient')
+_CURRENT_DIR = os.sep.join(_FOLDERS[:_PROJECT_FOLDER_INDEX+1])
+DATA_PATH = os.path.join(_CURRENT_DIR, 'out')
+OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'insights', 'bayes')
 
 # Main
 if __name__ == "__main__":
-    # Folder or file selection
-    selected_folder = show_menu(DATA_PATH)
-    list_of_files = []
-
-    # Check that a folder has been selected.
-    if os.path.isfile(selected_folder):
-        raise ValueError('A folder must be selected.')
-
-    noise_lvl = 0.05
-    # Walk through the folder
-    for root, dirs, files in os.walk(selected_folder):
-        if not root.endswith(('real', 'synthetic')):
+    # Walk through the folder structure
+    for data_type in ['tabular', 'time_series']:
+        data_type_path = os.path.join(DATA_PATH, data_type)
+        if not os.path.exists(data_type_path):
             continue
 
-        # Stablish if the folder contains real/synthetic and tabular/time_series data.
-        is_real = 'real' in root
-        is_tabular = 'tabular' in root
-
-        dod_r2 = {}
-        ood_r2 = {}
-        doo_r2 = {}
-        for inner_root, inner_dirs, inner_files in os.walk(root):
-            # if there are no files continue exploring
-            if not inner_files:
+        for data_origin in ['real', 'synthetic']:
+            origin_path = os.path.join(data_type_path, data_origin)
+            if not os.path.exists(origin_path):
                 continue
 
-            for file in inner_files:
-                # If the file is not a metrics file: continue exploring
-                if not 'metrics' in file:
+            is_real = data_origin == 'real'
+            NOISE_LVL = '' if is_real else '0.05'
+
+            ood_r2 = {} # train_original_test_denoised
+            nod_r2 = {} # train_noisy_test_denoised
+            doo_r2 = {} # train_denoised_test_original
+            don_r2 = {} # train_denoised_test_noisy
+            dod_r2 = {} # train_denoised_test_denoised
+            for dataset in os.listdir(origin_path):
+                dataset_path = os.path.join(origin_path, dataset)
+                if not os.path.isdir(dataset_path):
                     continue
 
-                method = file.split('_')[0]
-                if method not in dod_r2:
-                    dod_r2[method] = []
-                if method not in ood_r2:
-                    ood_r2[method] = []
-                if method not in doo_r2:
-                    doo_r2[method] = []
+                # Iterate through the methods and read the metrics files
+                for method in os.listdir(dataset_path):
+                    method_path = os.path.join(dataset_path, method)
+                    if not os.path.isdir(method_path):
+                        continue
 
-                # Read metrics.
-                metrics_file = os.path.join(inner_root, file)
-                with open(metrics_file, 'r') as f:
-                    current_metrics = json.load(f)
+                    for file in os.listdir(method_path):
+                        if 'metrics' not in file or NOISE_LVL not in file:
+                            continue
 
-                # Get the denoised_over_denoised and orig_over_denoised metrics from the file.
-                ood_tag = 'orig_over_denoised'
-                denoised_current_metrics = {}
-                if not is_real:
-                    ood_tag = 'noisy_over_denoised'
-                    denoised_current_metrics = dict(islice(current_metrics.items(), 1, None))
-                    denoised_current_metrics = denoised_current_metrics[f'{noise_lvl}']
-                else:
-                    denoised_current_metrics = current_metrics['denoised']
+                        # Read metrics
+                        metrics_file = os.path.join(method_path, file)
+                        with open(metrics_file, 'r', encoding='utf-8') as f:
+                            current_metrics = json.load(f)
 
-                dod_current_metrics = denoised_current_metrics['denoised_over_denoised']
-                doo_current_metrics = denoised_current_metrics['denoised_over_orig']
-                ood_current_metrics = denoised_current_metrics[ood_tag]
+                        original_current_metrics = {}
+                        current_metrics = current_metrics.get('XAI', {})
+                        if not is_real:
+                            original_current_metrics = current_metrics.get(
+                                'original', {})
+                        noisy_current_metrics = current_metrics.get(
+                            'noisy', {})
+                        denoised_current_metrics = current_metrics.get(
+                            'denoised', {})
 
-                if is_tabular:
-                    dod_current_r2 = [
-                        metrics['R2'] for key, metrics in dod_current_metrics.items()
-                        if key not in ['arima', 'auto_arima']
-                    ]
-                    doo_current_r2 = [
-                        metrics['R2'] for key, metrics in doo_current_metrics.items()
-                        if key not in ['arima', 'auto_arima']
-                    ]
-                    ood_current_r2 = [
-                        metrics['R2'] for key, metrics in ood_current_metrics.items()
-                        if key not in ['arima', 'auto_arima']
-                    ]
-                else:
-                    dod_current_r2 = [metrics['R2'] for _, metrics in dod_current_metrics.items()]
-                    doo_current_r2 = [metrics['R2'] for _, metrics in doo_current_metrics.items()]
-                    ood_current_r2 = [metrics['R2'] for _, metrics in ood_current_metrics.items()]
+                        ood_current_metrics = {}
+                        doo_current_metrics = {}
+                        if not is_real:
+                            ood_current_metrics = original_current_metrics.get(
+                                'train_original_test_denoised', {})
+                            doo_current_metrics = denoised_current_metrics.get(
+                                'train_denoised_test_original', {})
+                        nod_current_metrics = noisy_current_metrics.get(
+                            'train_noisy_test_denoised', {})
+                        don_current_metrics = denoised_current_metrics.get(
+                            'train_denoised_test_noisy', {})
+                        dod_current_metrics = denoised_current_metrics.get(
+                            'train_denoised_test_denoised', {})
 
-                dod_current_r2 = [0 if x is None else x for x in dod_current_r2]
-                doo_current_r2 = [0 if x is None else x for x in doo_current_r2]
-                ood_current_r2 = [0 if x is None else x for x in ood_current_r2]
-
-                # Check not all values are 0.
-                assert any(dod_current_r2)
-                assert any(ood_current_r2)
-                assert any(doo_current_r2)
-
-                # Extend the lists with the new values.
-                dod_r2[method] += dod_current_r2
-                ood_r2[method] += ood_current_r2
-                doo_r2[method] += doo_current_r2
-
-        # Crear y guardar la gráfica
-        # ------------------------------------------------------------------------------------ #
-        dod_gradient_r2 = np.array(dod_r2['gradient'])
-        ood_gradient_r2 = np.array(ood_r2['gradient'])
-        doo_gradient_r2 = np.array(doo_r2['gradient'])
-        dod_r2.pop('gradient')
-        ood_r2.pop('gradient')
-        doo_r2.pop('gradient')
-
-        dod_r2 = {k: np.array(dod_r2[k]) for k in sorted(dod_r2)}
-        ood_r2 = {k: np.array(ood_r2[k]) for k in sorted(ood_r2)}
-        doo_r2 = {k: np.array(doo_r2[k]) for k in sorted(doo_r2)}
-
-        for (k1, v1), (k2, v2), (k3, v3) in tqdm(zip(dod_r2.items(), ood_r2.items(), doo_r2.items())):
-            assert k1 == k2 == k3
-            names = ['Ours', k1]
-            bar_width = 0.7
-
-            probs, fig = baycomp.two_on_multiple(
-                dod_gradient_r2,
-                v1,
-                rope=0.01,
-                runs=100000,
-                plot=True,
-                names=names
-            )
-
-            path_parts = root.split(os.path.sep)
-            real_or_synthetic = path_parts[-1]
-            tabular_or_ts = path_parts[-2]
-            # Guardar la figura
-            noise_str = ''
-            if not is_real:
-                noise_str = f'_s{noise_lvl}'
-
-            data_str = f'{tabular_or_ts} {real_or_synthetic}{noise_str}'
-
-            fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
-            make_dir(fig_path)
-            fig_path = os.path.join(fig_path, f'gradient_v_{k1}_dod.png')
-            fig.savefig(fig_path, dpi=300, bbox_inches="tight")
-            plt.close()
+                        ood_current_r2 = []
+                        doo_current_r2 = []
+                        if data_type == 'tabular':
+                            if not is_real:
+                                ood_current_r2 = [
+                                    metrics.get('R2', 0)
+                                    for key, metrics in ood_current_metrics.items()
+                                    if key not in ['arima', 'auto_arima']
+                                ]
+                                doo_current_r2 = [
+                                    metrics.get('R2', 0)
+                                    for key, metrics in doo_current_metrics.items()
+                                    if key not in ['arima', 'auto_arima']
+                                ]
+                            nod_current_r2 = [
+                                metrics.get('R2', 0) for key, metrics in nod_current_metrics.items()
+                                if key not in ['arima', 'auto_arima']
+                            ]
+                            don_current_r2 = [
+                                metrics.get('R2', 0) for key, metrics in don_current_metrics.items()
+                                if key not in ['arima', 'auto_arima']
+                            ]
+                            dod_current_r2 = [
+                                metrics.get('R2', 0) for key, metrics in dod_current_metrics.items()
+                                if key not in ['arima', 'auto_arima']
+                            ]
+                        else:
+                            if not is_real:
+                                ood_current_r2 = [
+                                    metrics.get('R2', 0)
+                                    for _, metrics in ood_current_metrics.items()
+                                ]
+                                doo_current_r2 = [
+                                    metrics.get('R2', 0)
+                                    for _, metrics in doo_current_metrics.items()
+                                ]
+                            nod_current_r2 = [
+                                metrics.get('R2', 0) for _, metrics in nod_current_metrics.items()
+                            ]
+                            don_current_r2 = [
+                                metrics.get('R2', 0) for _, metrics in don_current_metrics.items()
+                            ]
+                            dod_current_r2 = [
+                                metrics.get('R2', 0) for _, metrics in dod_current_metrics.items()
+                            ]
 
 
-            # Crear y guardar la gráfica
-            # ------------------------------------------------------------------------------------ #
-            probs, fig = baycomp.two_on_multiple(
-                ood_gradient_r2,
-                v2,
-                rope=0.01,
-                runs=100000,
-                plot=True,
-                names=names
-            )
+                        ood_current_r2 = [0 if x is None else x for x in ood_current_r2]
+                        nod_current_r2 = [0 if x is None else x for x in nod_current_r2]
+                        doo_current_r2 = [0 if x is None else x for x in doo_current_r2]
+                        don_current_r2 = [0 if x is None else x for x in don_current_r2]
+                        dod_current_r2 = [0 if x is None else x for x in dod_current_r2]
 
-            path_parts = root.split(os.path.sep)
-            real_or_synthetic = path_parts[-1]
-            tabular_or_ts = path_parts[-2]
-            # Guardar la figura
-            noise_str = ''
-            if not is_real:
-                noise_str = f'_s{noise_lvl}'
+                        # Check not all values are 0.
+                        if not is_real:
+                            print(metrics_file)
+                            assert any(ood_current_r2)
+                            assert any(doo_current_r2)
+                        assert any(nod_current_r2)
+                        assert any(don_current_r2)
+                        assert any(dod_current_r2)
 
-            data_str = f'{tabular_or_ts} {real_or_synthetic}{noise_str}'
+                        # Extend the lists with the new values.
+                        method_name = file.split('_')[0]
+                        ood_r2.setdefault(method_name, []).extend(ood_current_r2)
+                        nod_r2.setdefault(method_name, []).extend(nod_current_r2)
+                        doo_r2.setdefault(method_name, []).extend(doo_current_r2)
+                        don_r2.setdefault(method_name, []).extend(don_current_r2)
+                        dod_r2.setdefault(method_name, []).extend(dod_current_r2)
 
-            fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
-            make_dir(fig_path)
-            fig_path = os.path.join(fig_path, f'gradient_v_{k1}_ood.png')
-            fig.savefig(fig_path, dpi=300, bbox_inches="tight")
-            plt.close()
+            # Generate and save plots
+            dict_names = ['ood', 'nod', 'doo', 'don', 'dod']
+            dicts = [ood_r2, nod_r2, doo_r2, don_r2, dod_r2]
+            for dict_name, r2_metrics in zip(dict_names, dicts):
+                for model_name, model_r2 in r2_metrics.items():
+                    if model_name == 'dlnr':
+                        continue
 
-            # Crear y guardar la gráfica
-            # ------------------------------------------------------------------------------------ #
-            probs, fig = baycomp.two_on_multiple(
-                doo_gradient_r2,
-                v3,
-                rope=0.01,
-                runs=100000,
-                plot=True,
-                names=names
-            )
+                    gradient_r2 = np.array(r2_metrics['dlnr'])
+                    model_r2 = np.array(model_r2)
 
-            path_parts = root.split(os.path.sep)
-            real_or_synthetic = path_parts[-1]
-            tabular_or_ts = path_parts[-2]
-            # Guardar la figura
-            noise_str = ''
-            if not is_real:
-                noise_str = f'_s{noise_lvl}'
+                    names = ['DLNR (Ours)', model_name]
 
-            data_str = f'{tabular_or_ts} {real_or_synthetic}{noise_str}'
+                    probs, fig = baycomp.two_on_multiple(
+                        gradient_r2,
+                        model_r2,
+                        rope=0.01,
+                        runs=100000,
+                        plot=True,
+                        names=names
+                    )
 
-            fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic)
-            make_dir(fig_path)
-            fig_path = os.path.join(fig_path, f'gradient_v_{k1}_doo.png')
-            fig.savefig(fig_path, dpi=300, bbox_inches="tight")
-            plt.close()
+                    path_parts = dataset_path.split(os.path.sep)
+                    real_or_synthetic = path_parts[-2]
+                    tabular_or_ts = path_parts[-3]
+
+                    # Save the figure in a folder based on the pair and dictionary
+                    fig_path = os.path.join(OUT_PATH, tabular_or_ts, real_or_synthetic,
+                                            f'DLNR_vs_{model_name}')
+                    make_dir(fig_path)
+                    fig_path = os.path.join(fig_path, f'{dict_name}.png')
+                    fig.savefig(fig_path, dpi=300, bbox_inches="tight")
+                    plt.close()
