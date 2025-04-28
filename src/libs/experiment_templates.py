@@ -429,7 +429,7 @@ class BaseExperiment:
 
         if self.is_ts:
             # Shift the target variable to create a new column
-            self.denoised_data['df']['y_shifted'] = self.denoised_data['df']['y'].shift(-1)
+            self.denoised_data['df']['y_shifted'] = self.denoised_data['df']['y'].copy().shift(-1)
             # Drop the last row with NaN value
             self.denoised_data['df'] = self.denoised_data['df'].dropna().reset_index(drop=True)
             y_shifted = self.denoised_data['df']['y_shifted'].copy()
@@ -440,6 +440,16 @@ class BaseExperiment:
             x_train, x_test, y_train, y_test = train_test_split(
                 self.denoised_data['df'][input_vars].values, y_shifted, test_size=0.2, shuffle=False
             )
+
+            # Remove the last row from the original and noisy data to align with the denoised data
+            new_shape = self.denoised_data['df'].shape[0]
+            if 'df' in self.original_data:
+                orig_df_name = self.original_data['df'].name
+                self.original_data['df'] = self.original_data['df'].iloc[:new_shape]
+                self.original_data['df'].name = orig_df_name
+            noisy_df_name = self.noisy_data['df'].name
+            self.noisy_data['df'] = self.noisy_data['df'].iloc[:new_shape]
+            self.noisy_data['df'].name = noisy_df_name
         else:
             # divide the data into train/test datasets
             input_vars = list(set(self.denoised_data['df'].columns) - set(['y']))
@@ -457,8 +467,8 @@ class BaseExperiment:
         self.denoised_data['y_test'] = y_test
 
         gt_values = self.noisy_data['df'].values
-        if self.is_ts:
-            gt_values = gt_values[:-1]
+        # if self.is_ts: TODO: borrar
+        #     gt_values = gt_values[:-1]
         predicted_values = self.denoised_data['df'].values
         mae = mean_absolute_error(gt_values, predicted_values)
         smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
@@ -682,19 +692,20 @@ class BaseExperiment:
         denoised_points = da.from_array(self.denoised_data['df'].values)
 
         # For time-series data, exclude the last row to align shifted target variables
-        if self.is_ts:
-            if original_points is not None:
-                original_points = original_points[:-1]
-            noisy_points = noisy_points[:-1]
-            denoised_points = denoised_points[:-1]
+        # if self.is_ts:
+        #     if original_points is not None:
+        #         original_points = original_points[:-1]
+        #     noisy_points = noisy_points[:-1]
 
         # Ensure noisy and denoised data have the same shape
         if noisy_points.shape != denoised_points.shape:
-            raise ValueError("Noisy and denoised data must have the same shape.")
+            raise ValueError(f"Noisy and denoised data must have the same shape. \
+                {noisy_points.shape} != {denoised_points.shape}")
 
         # Ensure original and denoised data have the same shape if original data exists
         if original_points is not None and original_points.shape != denoised_points.shape:
-            raise ValueError("Original and denoised data must have the same shape.")
+            raise ValueError(f"Original and denoised data must have the same shape. \
+                {original_points.shape} != {denoised_points.shape}")
 
         # Initialize the dataset_distances dictionary in metrics_dict if not already present
         if 'dataset_distances' not in self.metrics_dict:

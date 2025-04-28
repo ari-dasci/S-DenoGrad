@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=ts_exp
+#SBATCH --job-name=ts_dlnr
 #SBATCH --partition=dgx2,dgx,dios
 #SBATCH -c 16
 #SBATCH --gres=gpu:1
-#SBATCH --mem-per-gpu=20G
-#SBATCH --array=0-13%4
+#SBATCH --mem=100G
+#SBATCH --array=0-5
 
 source /opt/anaconda/etc/profile.d/conda.sh
 conda activate /mnt/homeGPU/JJavierAR/repsol_env/
@@ -14,21 +14,21 @@ export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 denoising_methods=(
     # "dae"
     "dlnr"
-    "emd"
-    "kalman_filter"
-    "moving_average"
-    "pca"
-    "resnet"
-    "wavelet_transform"
+    # "emd"
+    # "kalman_filter"
+    # "moving_average"
+    # "pca"
+    # "resnet"
+    # "wavelet_transform"
 )
 
 data_folders=(
-    # "real/daily_climate"
+    "real/daily_climate"
     "real/ECL"
-    # "real/ETT"
-    # "real/microsoft_stock"
+    "real/ETT"
+    "real/microsoft_stock"
     "real/WTH"
-    # "synthetic/1000s_5v_24w"
+    "synthetic/1000s_5v_24w"
 )
 
 # Generate all combinations of denoising_methods and data_folders

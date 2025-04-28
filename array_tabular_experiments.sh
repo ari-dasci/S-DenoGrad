@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=rt_iot
+#SBATCH --job-name=tab_dlnr
 #SBATCH --partition=dgx2,dgx,dios
 #SBATCH -c 16
 #SBATCH --gres=gpu:1
-#SBATCH --mem-per-gpu=20G
-#SBATCH --array=0-7
+#SBATCH --mem=20G
+#SBATCH --array=0-6
 
 source /opt/anaconda/etc/profile.d/conda.sh
 conda activate /mnt/homeGPU/JJavierAR/repsol_env/
@@ -12,24 +12,24 @@ export TFHUB_CACHE_DIR=.
 export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 
 denoising_methods=(
-    "dae"
+    # "dae"
     "dlnr"
-    "emd"
-    "kalman_filter"
-    "moving_average"
-    "pca"
-    "resnet"
-    "wavelet_transform"
+    # "emd"
+    # "kalman_filter"
+    # "moving_average"
+    # "pca"
+    # "resnet"
+    # "wavelet_transform"
 )
 
 data_folders=(
-    # "real/house_prices"
-    # "real/lattice_physics"
-    # "real/parkinsons"
+    "real/house_prices"
+    "real/lattice_physics"
+    "real/parkinsons"
     "real/rt_iot2022"
-    # "real/support"
-    # "synthetic/2D"
-    # "synthetic/3D"
+    "real/support"
+    "synthetic/2D"
+    "synthetic/3D"
 )
 
 # Generate all combinations of denoising_methods and data_folders

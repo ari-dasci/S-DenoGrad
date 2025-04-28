@@ -54,8 +54,8 @@ parser = argparse.ArgumentParser(description="Tabular Experiment")
 parser.add_argument(
     '--data_folder', 
     type=str,
-    default='house_prices',
-    help="Folder containing the dataset. Default is 'house_prices'."
+    default='daily_climate',
+    help="Folder containing the dataset. Default is 'daily_climate'."
 )
 parser.add_argument(
     '--data_file',
@@ -389,6 +389,9 @@ def dlnr(noisy_data: dict,
         'R2': r_squared
     }
 
+    if VERBOSE:
+        print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
+
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
     df_denoised = noisy_data['df'].copy()
@@ -414,8 +417,8 @@ def dlnr(noisy_data: dict,
     dlnr_model.fit(df_to_denoise)
     df_denoised[input_vars], _, x_gradients, y_gradients = dlnr_model.transform(
         nrr=0.05,
-        nr_threshold=0.01,
-        max_epochs=1000,
+        nr_threshold=0.05,
+        max_epochs=500,
         plot_progress=False,
         path_to_save_imgs=None,
         denoise_y=False,
@@ -423,8 +426,27 @@ def dlnr(noisy_data: dict,
     )
 
     if save_gradients:
-        np.save(os.path.join(gradients_path, 'x_gradients.npy'), np.array(x_gradients))
-        np.save(os.path.join(gradients_path, 'y_gradients.npy'), np.array(y_gradients))
+        print('» Saving gradients to: ', gradients_path)
+        print(f'Número de gradientes X: {len(x_gradients)}')
+        print(f'Número de gradientes Y: {len(y_gradients)}')
+
+        # Transform gradients to DataFrames
+        x_gradients_df = pd.DataFrame(x_gradients)
+        y_gradients_df = pd.DataFrame(y_gradients)
+
+        # Save gradients as parquet files
+        x_gradients_path = os.path.join(gradients_path, 'x_gradients.parquet')
+        y_gradients_path = os.path.join(gradients_path, 'y_gradients.parquet')
+
+        x_gradients_df.to_parquet(x_gradients_path, index=False)
+        y_gradients_df.to_parquet(y_gradients_path, index=False)
+
+        # with open(os.path.join(gradients_path, 'x_gradients.pkl'), 'wb') as f:
+        #     pickle.dump(x_gradients, f)
+
+        # with open(os.path.join(gradients_path, 'y_gradients.pkl'), 'wb') as f:
+        #     pickle.dump(y_gradients, f)
+        print('» Gradients saved to: ', gradients_path)
 
     return df_denoised, dlnr_metrics
 
@@ -833,7 +855,7 @@ def main():
         'epochs': 500,
         'patience': 15,
         'checkpoint_path': None,
-        'gradients_path': GRADIENTS_PATH,
+        # 'gradients_path': GRADIENTS_PATH,
         'should_train': TRAIN_DENOISING_METHOD,
         'model_params_dict': dlnr_model_params,
     }

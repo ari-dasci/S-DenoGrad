@@ -792,316 +792,316 @@ class Trainer:
             predictions.append(self.best_model(batch_x).cpu().detach().numpy())
 
         return predictions
-    
+
 # Trainer using PyTorch Lightning
 # ---------------------------------------------------------------------------- #
 
-class LightningTrainer(pl.LightningModule):
-    """
-    Trainer class using PyTorch Lightning.
-    """
-    def __init__(self, model, criterion, optimizer, epoch_scheduler=None, batch_scheduler=None):
-        """
-        Initializes the LightningTrainer object.
+# class LightningTrainer(pl.LightningModule):
+#     """
+#     Trainer class using PyTorch Lightning.
+#     """
+#     def __init__(self, model, criterion, optimizer, epoch_scheduler=None, batch_scheduler=None):
+#         """
+#         Initializes the LightningTrainer object.
 
-        Args:
-            model (nn.Module): The neural network model to be trained.
-            criterion (torch.nn.Module): The loss function.
-            optimizer (torch.optim.Optimizer): The optimizer for updating model parameters.
-            epoch_scheduler (torch.optim.lr_scheduler._LRScheduler, optional): The learning rate
-                scheduler based on epochs.
-            batch_scheduler (torch.optim.lr_scheduler._LRScheduler, optional): The learning rate
-                scheduler based on batches.
-        """
-        super(LightningTrainer, self).__init__()
-        self.model = model
-        self.criterion = criterion
-        self.optimizer = optimizer
-        self.epoch_scheduler = epoch_scheduler
-        self.batch_scheduler = batch_scheduler
+#         Args:
+#             model (nn.Module): The neural network model to be trained.
+#             criterion (torch.nn.Module): The loss function.
+#             optimizer (torch.optim.Optimizer): The optimizer for updating model parameters.
+#             epoch_scheduler (torch.optim.lr_scheduler._LRScheduler, optional): The learning rate
+#                 scheduler based on epochs.
+#             batch_scheduler (torch.optim.lr_scheduler._LRScheduler, optional): The learning rate
+#                 scheduler based on batches.
+#         """
+#         super(LightningTrainer, self).__init__()
+#         self.model = model
+#         self.criterion = criterion
+#         self.optimizer = optimizer
+#         self.epoch_scheduler = epoch_scheduler
+#         self.batch_scheduler = batch_scheduler
 
-    def forward(self, x):
-        """
-        Forward pass of the model.
+#     def forward(self, x):
+#         """
+#         Forward pass of the model.
 
-        Args:
-            x (torch.Tensor): Input data.
+#         Args:
+#             x (torch.Tensor): Input data.
 
-        Returns:
-            torch.Tensor: Model output.
-        """
-        return self.model(x)
+#         Returns:
+#             torch.Tensor: Model output.
+#         """
+#         return self.model(x)
 
-    def training_step(self, batch, batch_idx):
-        """
-        Training step for a single batch.
+#     def training_step(self, batch, batch_idx):
+#         """
+#         Training step for a single batch.
 
-        Args:
-            batch (tuple): A tuple containing input data and target labels.
-            batch_idx (int): Index of the batch.
+#         Args:
+#             batch (tuple): A tuple containing input data and target labels.
+#             batch_idx (int): Index of the batch.
 
-        Returns:
-            torch.Tensor: Training loss.
-        """
-        batch_x, batch_y = batch
-        outputs = self(batch_x)
-        if len(outputs.shape) < len(batch_y.shape):
-            outputs = outputs.unsqueeze(1)
-        loss = self.criterion(outputs, batch_y)
-        self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        return loss
+#         Returns:
+#             torch.Tensor: Training loss.
+#         """
+#         batch_x, batch_y = batch
+#         outputs = self(batch_x)
+#         if len(outputs.shape) < len(batch_y.shape):
+#             outputs = outputs.unsqueeze(1)
+#         loss = self.criterion(outputs, batch_y)
+#         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+#         return loss
 
-    def validation_step(self, batch, batch_idx):
-        """
-        Validation step for a single batch.
+#     def validation_step(self, batch, batch_idx):
+#         """
+#         Validation step for a single batch.
 
-        Args:
-            batch (tuple): A tuple containing input data and target labels.
-            batch_idx (int): Index of the batch.
+#         Args:
+#             batch (tuple): A tuple containing input data and target labels.
+#             batch_idx (int): Index of the batch.
 
-        Returns:
-            torch.Tensor: Validation loss.
-        """
-        batch_x, batch_y = batch
-        outputs = self(batch_x)
-        if len(outputs.shape) < len(batch_y.shape):
-            outputs = outputs.unsqueeze(1)
-        val_loss = self.criterion(outputs, batch_y)
-        self.log("val_loss", val_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        return val_loss
+#         Returns:
+#             torch.Tensor: Validation loss.
+#         """
+#         batch_x, batch_y = batch
+#         outputs = self(batch_x)
+#         if len(outputs.shape) < len(batch_y.shape):
+#             outputs = outputs.unsqueeze(1)
+#         val_loss = self.criterion(outputs, batch_y)
+#         self.log("val_loss", val_loss, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+#         return val_loss
 
-    def configure_optimizers(self):
-        """
-        Configures the optimizer and learning rate schedulers.
+#     def configure_optimizers(self):
+#         """
+#         Configures the optimizer and learning rate schedulers.
 
-        Returns:
-            dict: Dictionary containing optimizer and schedulers.
-        """
-        optimizers = [self.optimizer]
-        schedulers = []
+#         Returns:
+#             dict: Dictionary containing optimizer and schedulers.
+#         """
+#         optimizers = [self.optimizer]
+#         schedulers = []
 
-        if self.epoch_scheduler:
-            schedulers.append({
-                'scheduler': self.epoch_scheduler,
-                'interval': 'epoch',
-                'monitor': 'val_loss'
-            })
+#         if self.epoch_scheduler:
+#             schedulers.append({
+#                 'scheduler': self.epoch_scheduler,
+#                 'interval': 'epoch',
+#                 'monitor': 'val_loss'
+#             })
 
-        if self.batch_scheduler:
-            schedulers.append({
-                'scheduler': self.batch_scheduler,
-                'interval': 'step'
-            })
+#         if self.batch_scheduler:
+#             schedulers.append({
+#                 'scheduler': self.batch_scheduler,
+#                 'interval': 'step'
+#             })
 
-        return {"optimizer": optimizers, "lr_scheduler": schedulers}
-
-
-class XAI_benchmark:
-    """
-    Class to perform model training in the style of PyTorch Lightning.
-    """
-    def __init__(self, is_ts:bool = False, model_params:dict = None, verbose:bool = True) -> None:
-        self.is_ts = is_ts
-        self.verbose = verbose
-
-        if model_params['ridge']:
-            self.ridge = Ridge(**model_params['ridge'])
-        else:
-            self.ridge = None
-        if model_params['pls']:
-            self.pls = PLSRegression(**model_params['pls'])
-        else:
-            self.pls = None
-        if model_params['tree']:
-            self.decision_tree = DecisionTreeRegressor(**model_params['tree'])
-        else:
-            self.decision_tree = None
-        if model_params['svm']:
-            self.svr = SVR(**model_params['svm'])
-        else:
-            self.svr = None
-        if model_params['knn']:
-            self.knn = KNeighborsRegressor(**model_params['knn'])
-        else:
-            self.knn = None
-        if self.is_ts:
-            if model_params['auto_arima']:
-                raise ValueError('Auto-ARIMA model is no longer supported. Use ARIMA instead.')
-                # if self.verbose:
-                #     print('Fitting Auto-ARIMA model...')
-                # self.auto_arima = auto_arima(**model_params['auto_arima'])
-                # print(self.auto_arima.summary())
-            else:
-                self.auto_arima = None
-            if model_params['arima']:
-                self.arima = ARIMA(**model_params['arima'])
-            else:
-                self.arima = None
+#         return {"optimizer": optimizers, "lr_scheduler": schedulers}
 
 
-    def fit(self, X:np.array, y:np.array) -> None:
-        """
-        Fit all XAI models
+# class XAI_benchmark:
+#     """
+#     Class to perform model training in the style of PyTorch Lightning.
+#     """
+#     def __init__(self, is_ts:bool = False, model_params:dict = None, verbose:bool = True) -> None:
+#         self.is_ts = is_ts
+#         self.verbose = verbose
 
-        Args:
-            X (np.array): input training data.
-            y (np.array): target training data.
-        """
-        if self.ridge:
-            if self.verbose:
-                print('Fitting Ridge model...')
-            self.ridge.fit(X, y)
-        if self.pls:
-            if self.verbose:
-                print('Fitting Partial Least Squares model...')
-            self.pls.fit(X, y)
-        if self.decision_tree:
-            if self.verbose:
-                print('Fitting Decision Tree model...')
-            self.decision_tree.fit(X, y)
-        if self.svr:
-            if self.verbose:
-                print('Fitting Support Vector Regressor model...')
-            self.svr.fit(X, y)
-        if self.knn:
-            if self.verbose:
-                print('Fitting K-Nearest Neighbours model...')
-            self.knn.fit(X, y)
-        if self.is_ts:
-            try:
-                y = y.values
-            except:
-                pass
-
-            if self.arima:
-                if self.verbose:
-                    print(f'Fitting ARIMA model...')
-                self.arima.fit(y)
-
-        if self.verbose:
-            print('All models fitted!')
-
-
-    def predict(self, X:np.array, y_true:np.array = None, n_periods:int = None,
-                rolling_forcast:bool = False, get_metrics:bool = False) -> dict:
-        """
-        Predict with all XAI models.
-
-        Args:
-            X (np.array): input validation/test data.
-
-        Returns:
-            dictionary: dictionary with all the models predictions.
-        """
-        predictions = {
-            'ridge': self.ridge.predict(X) if self.ridge else [],
-            'pls': self.pls.predict(X) if self.pls else [],
-            'decision_tree': self.decision_tree.predict(X) if self.decision_tree else [],
-            'svm': self.svr.predict(X) if self.svr else [],
-            'knn': self.knn.predict(X) if self.knn else [],
-            'arima': [],
-            'auto_arima': []
-        }
-
-        # If the data is a time series and n_periods has been specified for arima models
-        if n_periods and self.is_ts:
-            # If the prediction will be step by step
-            if rolling_forcast:
-                i=0
-                while i < n_periods:
-                    if self.arima:
-                        new_pred = self.arima.predict(n_periods=1)
-                        predictions['arima'].append(new_pred[0])
-                        self.arima.update(new_pred)
-                    elif self.auto_arima:
-                        new_pred = self.auto_arima.predict(n_periods=1)
-                        predictions['auto_arima'].append(new_pred[0])
-                        self.auto_arima.update(new_pred)
-                    i+=1
-            # Or all at once
-            else:
-                if self.arima:
-                    predictions['arima'] = self.arima.predict(n_periods=n_periods)
-                elif self.auto_arima:
-                    predictions['auto_arima'] = self.arima.predict(n_periods=n_periods)
+#         if model_params['ridge']:
+#             self.ridge = Ridge(**model_params['ridge'])
+#         else:
+#             self.ridge = None
+#         if model_params['pls']:
+#             self.pls = PLSRegression(**model_params['pls'])
+#         else:
+#             self.pls = None
+#         if model_params['tree']:
+#             self.decision_tree = DecisionTreeRegressor(**model_params['tree'])
+#         else:
+#             self.decision_tree = None
+#         if model_params['svm']:
+#             self.svr = SVR(**model_params['svm'])
+#         else:
+#             self.svr = None
+#         if model_params['knn']:
+#             self.knn = KNeighborsRegressor(**model_params['knn'])
+#         else:
+#             self.knn = None
+#         if self.is_ts:
+#             if model_params['auto_arima']:
+#                 raise ValueError('Auto-ARIMA model is no longer supported. Use ARIMA instead.')
+#                 # if self.verbose:
+#                 #     print('Fitting Auto-ARIMA model...')
+#                 # self.auto_arima = auto_arima(**model_params['auto_arima'])
+#                 # print(self.auto_arima.summary())
+#             else:
+#                 self.auto_arima = None
+#             if model_params['arima']:
+#                 self.arima = ARIMA(**model_params['arima'])
+#             else:
+#                 self.arima = None
 
 
-        metrics = {}
+#     def fit(self, X:np.array, y:np.array) -> None:
+#         """
+#         Fit all XAI models
 
-        if get_metrics:
-            assert y_true is not None, 'y must be provided to calculate metrics.'
-            for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima', 'auto_arima']:
-                if list(predictions[model]):
-                    metrics[model] = {
-                        'mse': mean_squared_error(y_true, predictions[model]),
-                        'rmse': np.sqrt(mean_squared_error(y_true, predictions[model])),
-                        'mae': mean_absolute_error(y_true, predictions[model]),
-                        'mape': mean_absolute_percentage_error(y_true, predictions[model]),
-                        'R2': r2_score(y_true, predictions[model])
-                    }
-                else:
-                    metrics[model] = {
-                        'mse': None,
-                        'rmse': None,
-                        'mae': None,
-                        'mape': None,
-                        'R2': None
-                    }
+#         Args:
+#             X (np.array): input training data.
+#             y (np.array): target training data.
+#         """
+#         if self.ridge:
+#             if self.verbose:
+#                 print('Fitting Ridge model...')
+#             self.ridge.fit(X, y)
+#         if self.pls:
+#             if self.verbose:
+#                 print('Fitting Partial Least Squares model...')
+#             self.pls.fit(X, y)
+#         if self.decision_tree:
+#             if self.verbose:
+#                 print('Fitting Decision Tree model...')
+#             self.decision_tree.fit(X, y)
+#         if self.svr:
+#             if self.verbose:
+#                 print('Fitting Support Vector Regressor model...')
+#             self.svr.fit(X, y)
+#         if self.knn:
+#             if self.verbose:
+#                 print('Fitting K-Nearest Neighbours model...')
+#             self.knn.fit(X, y)
+#         if self.is_ts:
+#             try:
+#                 y = y.values
+#             except:
+#                 pass
 
-        return predictions, metrics
+#             if self.arima:
+#                 if self.verbose:
+#                     print(f'Fitting ARIMA model...')
+#                 self.arima.fit(y)
 
-
-    def save(self, path:str, subfix:str = ''):
-        """
-        Save the XAI models in pickle format.
-
-        Args:
-            path (str): path to save the models.
-            subfix (str): extra name for info.
-        """
-        make_dir(path)
-        names = ['ridge', 'pls', 'decision_tree', 'svr', 'knn']
-        models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn]
-        for name, model in zip(names, models):
-            file_name = f'{name}_{subfix}.pkl' if subfix else f'{name}.pkl'
-            with open(os.path.join(path, file_name), 'wb') as f:
-                pickle.dump(model, f)
-
-        file_name = f'arima_{subfix}.pkl' if subfix else 'arima.pkl'
-        if self.is_ts:
-            with open(os.path.join(path, file_name), 'wb') as f:
-                pickle.dump(self.arima, f)
+#         if self.verbose:
+#             print('All models fitted!')
 
 
-    def load(self, folder_path:str, must_have:str='', subfix:str=''):
-        """
-        Save the XAI models in pickle format.
+#     def predict(self, X:np.array, y_true:np.array = None, n_periods:int = None,
+#                 rolling_forcast:bool = False, get_metrics:bool = False) -> dict:
+#         """
+#         Predict with all XAI models.
 
-        Args:
-            folder_path (str): path to saved models.
-        """
-        names = ['ridge', 'pls', 'decision', 'svr', 'knn', 'arima']
-        models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn, self.arima]
-        loaded_models = {}
+#         Args:
+#             X (np.array): input validation/test data.
 
-        make_dir(folder_path)
+#         Returns:
+#             dictionary: dictionary with all the models predictions.
+#         """
+#         predictions = {
+#             'ridge': self.ridge.predict(X) if self.ridge else [],
+#             'pls': self.pls.predict(X) if self.pls else [],
+#             'decision_tree': self.decision_tree.predict(X) if self.decision_tree else [],
+#             'svm': self.svr.predict(X) if self.svr else [],
+#             'knn': self.knn.predict(X) if self.knn else [],
+#             'arima': [],
+#             'auto_arima': []
+#         }
 
-        for file_name in os.listdir(folder_path):
-            full_path = os.path.join(folder_path, file_name)
-            if os.path.isfile(full_path) and must_have in full_path and full_path.endswith(f'{subfix}.pkl'):
-                prefix = file_name.split('_')[0]
-                try:
-                    i_list = names.index(prefix)
-                    with open(full_path, 'rb') as f:
-                        loaded_models[names[i_list]] = pickle.load(f)
-                        print(f'Loaded {names[i_list]} model')
-                except Exception as e:
-                    print(f'Error loading model {file_name}: {e}')
+#         # If the data is a time series and n_periods has been specified for arima models
+#         if n_periods and self.is_ts:
+#             # If the prediction will be step by step
+#             if rolling_forcast:
+#                 i=0
+#                 while i < n_periods:
+#                     if self.arima:
+#                         new_pred = self.arima.predict(n_periods=1)
+#                         predictions['arima'].append(new_pred[0])
+#                         self.arima.update(new_pred)
+#                     elif self.auto_arima:
+#                         new_pred = self.auto_arima.predict(n_periods=1)
+#                         predictions['auto_arima'].append(new_pred[0])
+#                         self.auto_arima.update(new_pred)
+#                     i+=1
+#             # Or all at once
+#             else:
+#                 if self.arima:
+#                     predictions['arima'] = self.arima.predict(n_periods=n_periods)
+#                 elif self.auto_arima:
+#                     predictions['auto_arima'] = self.arima.predict(n_periods=n_periods)
 
-        # Update attributes in self
-        self.ridge = loaded_models.get('ridge', self.ridge)
-        self.pls = loaded_models.get('pls', self.pls)
-        self.decision_tree = loaded_models.get('decision', self.decision_tree)
-        self.svr = loaded_models.get('svr', self.svr)
-        self.knn = loaded_models.get('knn', self.knn)
-        self.arima = loaded_models.get('arima', self.arima)
+
+#         metrics = {}
+
+#         if get_metrics:
+#             assert y_true is not None, 'y must be provided to calculate metrics.'
+#             for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima', 'auto_arima']:
+#                 if list(predictions[model]):
+#                     metrics[model] = {
+#                         'mse': mean_squared_error(y_true, predictions[model]),
+#                         'rmse': np.sqrt(mean_squared_error(y_true, predictions[model])),
+#                         'mae': mean_absolute_error(y_true, predictions[model]),
+#                         'mape': mean_absolute_percentage_error(y_true, predictions[model]),
+#                         'R2': r2_score(y_true, predictions[model])
+#                     }
+#                 else:
+#                     metrics[model] = {
+#                         'mse': None,
+#                         'rmse': None,
+#                         'mae': None,
+#                         'mape': None,
+#                         'R2': None
+#                     }
+
+#         return predictions, metrics
+
+
+#     def save(self, path:str, subfix:str = ''):
+#         """
+#         Save the XAI models in pickle format.
+
+#         Args:
+#             path (str): path to save the models.
+#             subfix (str): extra name for info.
+#         """
+#         make_dir(path)
+#         names = ['ridge', 'pls', 'decision_tree', 'svr', 'knn']
+#         models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn]
+#         for name, model in zip(names, models):
+#             file_name = f'{name}_{subfix}.pkl' if subfix else f'{name}.pkl'
+#             with open(os.path.join(path, file_name), 'wb') as f:
+#                 pickle.dump(model, f)
+
+#         file_name = f'arima_{subfix}.pkl' if subfix else 'arima.pkl'
+#         if self.is_ts:
+#             with open(os.path.join(path, file_name), 'wb') as f:
+#                 pickle.dump(self.arima, f)
+
+
+#     def load(self, folder_path:str, must_have:str='', subfix:str=''):
+#         """
+#         Save the XAI models in pickle format.
+
+#         Args:
+#             folder_path (str): path to saved models.
+#         """
+#         names = ['ridge', 'pls', 'decision', 'svr', 'knn', 'arima']
+#         models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn, self.arima]
+#         loaded_models = {}
+
+#         make_dir(folder_path)
+
+#         for file_name in os.listdir(folder_path):
+#             full_path = os.path.join(folder_path, file_name)
+#             if os.path.isfile(full_path) and must_have in full_path and full_path.endswith(f'{subfix}.pkl'):
+#                 prefix = file_name.split('_')[0]
+#                 try:
+#                     i_list = names.index(prefix)
+#                     with open(full_path, 'rb') as f:
+#                         loaded_models[names[i_list]] = pickle.load(f)
+#                         print(f'Loaded {names[i_list]} model')
+#                 except Exception as e:
+#                     print(f'Error loading model {file_name}: {e}')
+
+#         # Update attributes in self
+#         self.ridge = loaded_models.get('ridge', self.ridge)
+#         self.pls = loaded_models.get('pls', self.pls)
+#         self.decision_tree = loaded_models.get('decision', self.decision_tree)
+#         self.svr = loaded_models.get('svr', self.svr)
+#         self.knn = loaded_models.get('knn', self.knn)
+#         self.arima = loaded_models.get('arima', self.arima)

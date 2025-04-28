@@ -399,6 +399,9 @@ def dlnr(noisy_data: dict,
         'R2': r_squared
     }
 
+    if VERBOSE:
+        print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
+
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
     df_denoised = noisy_data['df'].copy()
@@ -407,8 +410,8 @@ def dlnr(noisy_data: dict,
     dlnr_model.fit(noisy_data['df'][input_vars].values, noisy_data['df']['y'].values.reshape(-1, 1))
     df_denoised[input_vars], df_denoised['y'], x_gradients, y_gradients = dlnr_model.transform(
         nrr=0.05,
-        nr_threshold=0.01,
-        max_epochs=1000,
+        nr_threshold=0.05,
+        max_epochs=500,
         plot_progress=False,
         path_to_save_imgs=None,
         save_gradients=save_gradients
@@ -814,7 +817,7 @@ def main():
         'epochs': 500,
         'patience': 15,
         'checkpoint_path': None,
-        'gradients_path': GRADIENTS_PATH,
+        # 'gradients_path': GRADIENTS_PATH,
         'should_train': TRAIN_DENOISING_METHOD
     }
 
