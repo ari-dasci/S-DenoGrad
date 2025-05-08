@@ -402,16 +402,26 @@ def dlnr(noisy_data: dict,
     if VERBOSE:
         print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
 
+    if dlnr_metrics['R2'] < 0.7: #TODO: change threshold as needed
+        print('» The model is not able to learn the data. Please check the parameters.')
+        return None, dlnr_metrics
+
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
     df_denoised = noisy_data['df'].copy()
     input_vars = list(set(df_denoised.columns) - set(['y']))
-    dlnr_model = DLNoiseReduction(model=model, criterion=criterion, is_ts=False, is_cnn=IS_CNN)
+    dlnr_model = DLNoiseReduction(
+        model=model,
+        criterion=criterion,
+        is_ts=False,
+        is_cnn=IS_CNN,
+        device=DEVICE
+    )
     dlnr_model.fit(noisy_data['df'][input_vars].values, noisy_data['df']['y'].values.reshape(-1, 1))
     df_denoised[input_vars], df_denoised['y'], x_gradients, y_gradients = dlnr_model.transform(
-        nrr=0.05,
-        nr_threshold=0.05,
-        max_epochs=500,
+        nrr=0.02,
+        nr_threshold=0.02,
+        max_epochs=10000,
         plot_progress=False,
         path_to_save_imgs=None,
         save_gradients=save_gradients
@@ -944,6 +954,7 @@ def main():
             experiment.run(
                 data_file=args.data_file,
                 add_noise=False,
+                sigma=0.05,
                 denoising_method=denoising_dict['method'],
                 denoising_method_params=denoising_dict['params'],
                 xai_models_params=xai_models_parms

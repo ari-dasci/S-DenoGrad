@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=ts_dlnr
-#SBATCH --partition=dgx2,dgx,dios
+#SBATCH --partition=dgx2,dgx
 #SBATCH -c 16
 #SBATCH --gres=gpu:1
 #SBATCH --mem=100G
@@ -12,22 +12,22 @@ export TFHUB_CACHE_DIR=.
 export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 
 denoising_methods=(
-    # "dae"
+    "dae"
     "dlnr"
-    # "emd"
-    # "kalman_filter"
-    # "moving_average"
+    "emd"
+    "kalman_filter"
+    "moving_average"
     # "pca"
     # "resnet"
-    # "wavelet_transform"
+    "wavelet_transform"
 )
 
 data_folders=(
-    "real/daily_climate"
-    "real/ECL"
-    "real/ETT"
-    "real/microsoft_stock"
-    "real/WTH"
+    # "real/daily_climate"
+    # "real/ECL"
+    # "real/ETT"
+    # "real/microsoft_stock"
+    # "real/WTH"
     "synthetic/1000s_5v_24w"
 )
 

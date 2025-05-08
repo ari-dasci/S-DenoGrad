@@ -63,7 +63,7 @@ if __name__ == "__main__":
                         current_metrics = current_metrics.get('XAI', {})
                         if not is_real:
                             original_current_metrics = current_metrics.get(
-                                'original', {})
+                                'orig', {})
                         noisy_current_metrics = current_metrics.get(
                             'noisy', {})
                         denoised_current_metrics = current_metrics.get(
@@ -138,7 +138,7 @@ if __name__ == "__main__":
 
                         # Check not all values are 0.
                         if not is_real:
-                            print(metrics_file)
+                            # print(metrics_file)
                             assert any(ood_current_r2)
                             assert any(doo_current_r2)
                         assert any(nod_current_r2)

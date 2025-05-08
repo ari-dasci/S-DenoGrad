@@ -355,7 +355,7 @@ if __name__ == '__main__':
                                                         nrr=0.05,
                                                         nr_threshold=0.01,
                                                         max_epochs=200,
-                                                        plot_progress=False,
+                                                        plot_progress=True,
                                                         path_to_save_imgs=None
         )
 

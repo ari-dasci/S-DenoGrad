@@ -179,42 +179,48 @@ class BaseExperiment:
         Returns:
             None
         """
+        dataset = None
+        if 'df' in self.original_data:
+            dataset = self.original_data
+        else:
+            dataset = self.noisy_data
+
         sigma = round(sigma, 3)
         self.noisy_data['df'] = add_gaussian_noise(
-            data=self.original_data['df'].copy(),
-            columns=list(self.original_data['df'].columns),
+            data=dataset['df'].copy(),
+            columns=list(dataset['df'].columns),
             mean=0.0,
             std=sigma
         )
 
         self.noisy_data['x_train'] = add_gaussian_noise(
-            data=self.original_data['x_train'].copy().to_numpy()
-                if isinstance(self.original_data['x_train'], pd.Series)
-                else self.original_data['x_train'].copy(),
+            data=dataset['x_train'].copy().to_numpy()
+                if isinstance(dataset['x_train'], pd.Series)
+                else dataset['x_train'].copy(),
             columns=[],
             mean=0.0,
             std=sigma
         )
         self.noisy_data['x_test'] = add_gaussian_noise(
-            data=self.original_data['x_test'].copy().to_numpy()
-                if isinstance(self.original_data['x_test'], pd.Series)
-                else self.original_data['x_test'].copy(),
+            data=dataset['x_test'].copy().to_numpy()
+                if isinstance(dataset['x_test'], pd.Series)
+                else dataset['x_test'].copy(),
             columns=[],
             mean=0.0,
             std=sigma
         )
         self.noisy_data['y_train'] = add_gaussian_noise(
-            data=self.original_data['y_train'].copy().to_numpy()
-                if isinstance(self.original_data['y_train'], pd.Series)
-                else self.original_data['y_train'].copy(),
+            data=dataset['y_train'].copy().to_numpy()
+                if isinstance(dataset['y_train'], pd.Series)
+                else dataset['y_train'].copy(),
             columns=[],
             mean=0.0,
             std=sigma
         )
         self.noisy_data['y_test'] = add_gaussian_noise(
-            data=self.original_data['y_test'].copy().to_numpy()
-                if isinstance(self.original_data['y_test'], pd.Series)
-                else self.original_data['y_test'].copy(),
+            data=dataset['y_test'].copy().to_numpy()
+                if isinstance(dataset['y_test'], pd.Series)
+                else dataset['y_test'].copy(),
             columns=[],
             mean=0.0,
             std=sigma
@@ -417,6 +423,11 @@ class BaseExperiment:
         denoising_result = denoise_method(self.noisy_data, **kwargs)
         if isinstance(denoising_result, tuple) and len(denoising_result) == 2:
             denoised_data, possible_metrics = denoising_result
+
+            # May have happened due to not a sufficient R2 score of the DL model
+            if denoised_data is None:
+                return True
+
             self.denoised_data['df'] = denoised_data
             self.metrics_dict['denoising']['fitting'] = possible_metrics
         else:
@@ -882,7 +893,11 @@ class BaseExperiment:
         # Denoise the data
         if self.verbose:
             print("\n » Denoising the data...")
-        self.perform_denoising(denoising_method, **denoising_method_params)
+        low_r2 = self.perform_denoising(denoising_method, **denoising_method_params)
+
+        # The r2 score is too low, so we stop the experiment
+        if low_r2:
+            return low_r2
 
         # Fit the XAI models on the original, noisy and denoised data
         if 'df' in self.original_data:

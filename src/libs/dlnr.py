@@ -258,6 +258,7 @@ class DLNoiseReduction():
 
         epoch = 0
         apply_gradient = [True, True]
+        # show_gradients = True
         while epoch < max_epochs and np.array(apply_gradient).any() > 0:
             x_tensor = torch.tensor(x_tensor, requires_grad=True)
             y_tensor = torch.tensor(y_tensor, requires_grad=True)
@@ -300,9 +301,17 @@ class DLNoiseReduction():
                 x_gradient_list.append(grad_l_x)
                 y_gradient_list.append(grad_l_y)
 
-            x_tensor -= grad_l_x*nrr*apply_gradient.sum(axis=1)[:, np.newaxis]
+            # if show_gradients:
+            #     print(grad_l_x*nrr*apply_gradient.sum(axis=1)[:, np.newaxis])
+            #     print('')
+            #     print(grad_l_x*nrr*apply_gradient)
+            #     a = input('Press Enter to continue...')
+            #     if a == 'q':
+            #         show_gradients = False
+
+            x_tensor -= grad_l_x*nrr*apply_gradient#.sum(axis=1)[:, np.newaxis]
             if denoise_y:
-                y_tensor -= grad_l_y*nrr*apply_gradient.sum(axis=1)[:, np.newaxis]
+                y_tensor -= grad_l_y*nrr*apply_gradient#.sum(axis=1)[:, np.newaxis]
 
             # Plot the progression of noise reduction if specified
             if plot_progress:
@@ -332,9 +341,9 @@ class DLNoiseReduction():
             epoch += 1
 
         if epoch >= max_epochs:
-            print(f'Max epochs reached: {epoch/max_epochs}')
+            print(f'Max epochs reached: {epoch}/{max_epochs}')
         else:
-            print('Noise threshold reached in all data points.')
+            print('Noise threshold reached in all data points at epoch: ', epoch)
 
         return x_tensor, y_tensor, x_gradient_list, y_gradient_list
 
@@ -373,11 +382,13 @@ class DLNoiseReduction():
         y_gradient_list = []
         self._model.train() # RNN backward allowed.
         epoch = 0
-        apply_gradient = [True, True]
+        more_gradients_to_apply = 1
         with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
-            while epoch < max_epochs and sum(apply_gradient) > 0:
+            while epoch < max_epochs and more_gradients_to_apply:
                 n_window = 0
+                more_gradients_to_apply = 0
                 # Iterate over the windows
+
                 for i, _ in enumerate(self._x_noisy):
                     # Add a dimension to match the model requirements for time series
                     # (batch, window, variables) and make it a tensor.
@@ -409,25 +420,27 @@ class DLNoiseReduction():
                     y_tensor_array = y_tensor.detach().cpu().numpy()
                     apply_gradient = np.abs(y_predicted_array - y_tensor_array)
                     apply_gradient = apply_gradient > nr_threshold
+                    more_gradients_to_apply += apply_gradient.sum()
 
                     # Get the calculated gradients
                     grad_l_x = x_tensor.grad.detach().cpu().numpy()
-                    grad_l_y = y_tensor.grad.detach().cpu().numpy()
+                    # grad_l_y = y_tensor.grad.detach().cpu().numpy()
 
                     # Get the shape of the window. In the last iteration it can be smaller.
-                    window_size = grad_l_x.shape[1]
-                    grad_l_y = np.tile(grad_l_y, (1, window_size, 1))
-                    total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
-                    l2_grad = np.linalg.norm(total_grad)
+                    # window_size = grad_l_x.shape[1]
+                    # grad_l_y = np.tile(grad_l_y, (1, window_size, 1))
+                    # total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
+                    # l2_grad = np.linalg.norm(total_grad)
+                    l2_grad = np.linalg.norm(grad_l_x)
 
                     if l2_grad:
                         grad_l_x /= l2_grad
-                        grad_l_y /= l2_grad
+                        # grad_l_y /= l2_grad
 
-                    apply_gradient = apply_gradient.squeeze(axis=0)
+                    # apply_gradient = apply_gradient.squeeze(axis=0)
 
                     grad_l_x = grad_l_x.squeeze(axis=0)
-                    grad_l_x = grad_l_x*nrr*apply_gradient
+                    grad_l_x = grad_l_x*nrr*apply_gradient.item()
                     grad_l_x_shape = grad_l_x.shape[0]
                     if self.is_cnn:
                         grad_l_x_shape = grad_l_x.shape[1]
@@ -437,13 +450,13 @@ class DLNoiseReduction():
                         x_gradient_list.append(grad_l_x)
                     self._x_noisy.X[n_window:n_window+grad_l_x_shape] -= grad_l_x
 
-                    if denoise_y:
-                        grad_l_y = grad_l_y.mean()
-                        grad_l_y = grad_l_y*nrr*apply_gradient
+                    # if denoise_y:
+                    #     grad_l_y = grad_l_y.mean()
+                    #     grad_l_y = grad_l_y*nrr*apply_gradient.item()
 
-                        if save_gradients:
-                            y_gradient_list.append(grad_l_y)
-                        self._x_noisy.Y[n_window:n_window+grad_l_y.shape[0]] -= grad_l_y
+                    #     if save_gradients:
+                    #         y_gradient_list.append(grad_l_y)
+                    #     self._x_noisy.Y[n_window:n_window+grad_l_y.shape[0]] -= grad_l_y
 
                     n_window += 1
                     pbar1.update(1)
@@ -476,7 +489,7 @@ class DLNoiseReduction():
         else:
             assert self.is_ts, 'Model prepared to work with tabular data but no «y» has been \
                 provided.'
-            self._x_noisy = x
+            self._x_noisy = x.copy()
 
 
     def transform(

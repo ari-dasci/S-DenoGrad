@@ -103,6 +103,12 @@ parser.add_argument(
         'kalman_filter', 'moving_average', 'pca', 'resnet', 'wavelet_transform']"
 )
 parser.add_argument(
+    '--noise',
+    type=float,
+    default=0.0,
+    help="Noise level to add to the data. Default is 0.0."
+)
+parser.add_argument(
     '--slurm_id',
     type=str,
     default=None,
@@ -392,6 +398,10 @@ def dlnr(noisy_data: dict,
     if VERBOSE:
         print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
 
+    if dlnr_metrics['R2'] < 0.7:
+        print('» The model is not able to learn the data. Please check the parameters.')
+        return None, dlnr_metrics
+
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
     df_denoised = noisy_data['df'].copy()
@@ -416,9 +426,9 @@ def dlnr(noisy_data: dict,
     )
     dlnr_model.fit(df_to_denoise)
     df_denoised[input_vars], _, x_gradients, y_gradients = dlnr_model.transform(
-        nrr=0.05,
-        nr_threshold=0.05,
-        max_epochs=500,
+        nrr=0.02,
+        nr_threshold=0.02,
+        max_epochs=5000,
         plot_progress=False,
         path_to_save_imgs=None,
         denoise_y=False,
@@ -980,9 +990,12 @@ def main():
                 )
         else:
             # Run the experiment for real data
+            add_noise = args.noise != 0.0
+                
             experiment.run(
                 data_file=args.data_file,
-                add_noise=False,
+                add_noise=add_noise,
+                sigma=args.noise,
                 denoising_method=denoising_dict['method'],
                 denoising_method_params=denoising_dict['params'],
                 xai_models_params=xai_models_parms

@@ -164,7 +164,7 @@ def process_and_plot_metrics(metrics_dict, data_type, data_origin, dataset, out_
             y='R2',
             hue='Scenario',
             ax=ax,
-            palette='ch:start=.5,rot=-0.6,dark=.5,light=.8'
+            palette='tab10'#'ch:start=.5,rot=-0.6,dark=.5,light=.8'
         )
 
         # Add values above the bars

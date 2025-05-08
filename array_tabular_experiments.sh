@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=tab_dlnr
-#SBATCH --partition=dgx2,dgx,dios
+#SBATCH --partition=dgx2,dgx
 #SBATCH -c 16
 #SBATCH --gres=gpu:1
 #SBATCH --mem=20G
