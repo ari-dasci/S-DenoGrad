@@ -96,6 +96,12 @@ def get_metrics_data(dataset_path: str, sigma: str = '', is_real: bool = False):
             metrics_dict[model]['noisy'] = file_metrics.get('XAI', {}).get('noisy', {})
             metrics_dict[model]['denoised'] = file_metrics.get('XAI', {}).get('denoised', {})
 
+        denoising_metrics = file_metrics.get('denoising',{})
+        fitting_metrics = denoising_metrics.get('fitting', {})
+        if not fitting_metrics:
+            fitting_metrics = {}
+        metrics_dict[model]['fitting'] = fitting_metrics.get('R2', {})
+
     return metrics_dict
 
 
@@ -115,6 +121,13 @@ def process_and_plot_metrics(metrics_dict, data_type, data_origin, dataset, out_
     for model, metrics in metrics_dict.items():
         # Extract R2 values for different scenarios
         dfs = []
+        if 'fitting' in metrics:
+            fitting_str = metrics.pop('fitting')
+            if fitting_str:
+                fitting_str = round(fitting_str, 2)
+            else:
+                fitting_str = 'Null'
+
         for _, train_test_nomenclature_metrics in metrics.items():
             if not train_test_nomenclature_metrics:
                 continue  # Skip if scenario metrics are missing or empty
@@ -186,7 +199,7 @@ def process_and_plot_metrics(metrics_dict, data_type, data_origin, dataset, out_
         data_str = f'{synthetic_str} {dataset_str}'
         ax.set_title(
             f"Denoising method: {model.upper()} - Data: {data_str}\n\
-            R2 score per model and scenario",
+            Fitting: {fitting_str} - R2 score per model and scenario",
             fontsize=14
         )
         ax.set_ylabel("R2 score", fontsize=12)

@@ -68,7 +68,7 @@ import numpy as np
 import pandas as pd
 import dask.array as da
 from dask.dataframe import from_pandas
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from scipy.stats import entropy
@@ -1048,11 +1048,13 @@ class TabularExperiment(BaseExperiment):
     def __init__(self, data_path: str, out_path: str, checkpoint_path: str, subfix_name: str,
                  is_cnn: bool = False, train_original_xai: bool = False,
                  train_noisy_xai: bool = False, train_denoised_xai: bool = False,
-                 train_denoising_method: bool = False, verbose: bool = True) -> None:
+                 train_denoising_method: bool = False, verbose: bool = True, shuffle: bool = True
+                 ) -> None:
         super().__init__(data_path, out_path, checkpoint_path, subfix_name, is_cnn,
                          train_original_xai, train_noisy_xai, train_denoised_xai,
                          train_denoising_method, verbose)
         self.is_ts = False
+        self.shuffle = shuffle
 
     def load_data(self, data_file: str, y_col_name: str = '') -> tuple:
         """
@@ -1094,9 +1096,14 @@ class TabularExperiment(BaseExperiment):
 
         # divide the data into train/test datasets
         input_vars = list(set(df_data.columns) - set(['y']))
-        x_train, x_test, y_train, y_test = train_test_split(
-            df_data[input_vars].values, df_data['y'].values, test_size=0.2, random_state=42
-        )
+        if self.shuffle:
+            x_train, x_test, y_train, y_test = train_test_split(
+                df_data[input_vars].values, df_data['y'].values, test_size=0.2, random_state=42
+            )
+        else:
+            x_train, x_test, y_train, y_test = train_test_split(
+                df_data[input_vars].values, df_data['y'].values, test_size=0.2, shuffle=False
+            )
 
         synthetic = 'synthetic' in self.data_path
         if synthetic:

@@ -34,7 +34,7 @@ from filterpy.kalman import KalmanFilter
 import pywt
 # Local libraries
 sys.path.append(os.getcwd())
-from src.libs.models import Trainer, LSTMModel, DenoisingAutoencoder, DenseResNetDenoising, DenseTSModel
+from src.libs.models import Trainer, DenoisingAutoencoder, DenseResNetDenoising, GridFullyDenseNN
 from src.libs.utils import symmetric_mean_absolute_percentage_error
 from src.libs.dataset import TensorDataset, SlidingWindowDataset
 from src.libs.dlnr import DLNoiseReduction
@@ -273,11 +273,11 @@ def dae(noisy_data: dict, test_size: float = 0.2, random_state: int = 42, batch_
 
 
 def dlnr(noisy_data: dict,
-         batch_size: int = 64, window_size: int = 30, lr: float = 0.01,
-         criterion: nn.Module = nn.MSELoss(), optimizer: optim.Optimizer = optim.Adam,
-         epoch_scheduler: optim.lr_scheduler = None, batch_scheduler: optim.lr_scheduler = None,
-         epochs: int = 500, patience: int = 15,checkpoint_path: str = None,
-         gradients_path: str = None, should_train: bool = True, model_params_dict: dict = None
+         batch_size: int = 64, lr: float = 0.001, criterion: nn.Module = nn.MSELoss(),
+         optimizer: optim.Optimizer = optim.Adam, epoch_scheduler: str = None,
+         batch_scheduler: optim.lr_scheduler = None, epochs: int = 500, patience: int = 15,
+         checkpoint_path: str = None, gradients_path: str = None, should_train: bool = True,
+         model_params_dict: dict = None, target_var: str = 'y',
          ) -> tuple:
     """
     Perform training, evaluation, and gradient-based denoising using a neural network (NN) model.
@@ -294,7 +294,7 @@ def dlnr(noisy_data: dict,
             Defaults to nn.MSELoss().
         optimizer (optim.Optimizer, optional): Optimizer class to use for training.
             Defaults to optim.Adam.
-        epoch_scheduler (optim.lr_scheduler, optional): Learning rate scheduler for epochs.
+        epoch_scheduler (str, optional): Type of epoch scheduler to use ('StepLR', 'ReduceLROnPlateau', etc.).
             Defaults to None.
         batch_scheduler (optim.lr_scheduler, optional): Learning rate scheduler for batches.
             Defaults to None.
@@ -314,42 +314,42 @@ def dlnr(noisy_data: dict,
                 - 'mae': Mean Absolute Error.
                 - 'smape': Symmetric Mean Absolute Percentage Error.
                 - 'R2': R-squared score.
-    Notes:
-        - The method trains a fully connected NN model using the provided noisy data.
-        - If a checkpoint exists and `should_train` is False, the model weights are loaded from
-            the checkpoint.
-        - After training, the method evaluates the model on the test set and computes various
-            metrics.
-        - Finally, the method applies a gradient-based noise reduction technique to denoise the
-            input data.
     """
-    train_dataset = SlidingWindowDataset(
-        noisy_data['x_train'],
-        noisy_data['y_train'],
-        window_size=window_size,
-        future=1,
-        cnn=IS_CNN
+    df_data = noisy_data['df'].copy()
+
+    # Split the data into train and test sets
+    input_vars = list(set(df_data.columns) - set([target_var]))
+    x_train, x_test, y_train, y_test = train_test_split(
+        df_data[input_vars].values, df_data[target_var].values, test_size=0.2, random_state=42
     )
-    val_dataset = SlidingWindowDataset(
-        noisy_data['x_test'],
-        noisy_data['y_test'],
-        window_size=window_size,
-        future=1,
-        cnn=IS_CNN
+
+    # The x and y values are the same, as we want to reconstruct the input data
+    train_dataset = TensorDataset(
+        x=x_train,
+        y=y_train.reshape(-1, 1)
+    )
+    val_dataset = TensorDataset(
+        x=x_test,
+        y=y_test.reshape(-1, 1)
     )
 
     # Create the dataloaders
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
 
     # Create Neural Network model
-    # model = LSTMModel(noisy_data['x_train'].shape[1], **model_params_dict).to(DEVICE)
-    hidden_layers = [512, 256, 128, 64]
-    model = DenseTSModel(noisy_data['x_train'].shape[1]*window_size, hidden_sizes=hidden_layers, output_size=1)
-    model.to(DEVICE)
+    model = GridFullyDenseNN(**model_params_dict).to(DEVICE)
 
     # Set model parameters and create the model Trainer object
     optimizer = optimizer(model.parameters(), lr=lr)
+
+    # Define epoch scheduler if specified
+    if epoch_scheduler == 'StepLR':
+        epoch_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+    elif epoch_scheduler == 'ReduceLROnPlateau':
+        epoch_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5)
+    else:
+        epoch_scheduler = None
 
     # Define the trainer
     trainer_basic = Trainer(
@@ -378,11 +378,12 @@ def dlnr(noisy_data: dict,
         model, _, _, _, _ = trainer_basic.fit(verbose=VERBOSE)
 
     ## Predict and get the metrics for de NN model
-    predictions_test = trainer_basic.eval_dataloader(val_dataloader)
-    y_pred_test = np.array([y for x in predictions_test for y in x])
+    y_pred_test = model(
+        torch.tensor(x_test,).float().to(DEVICE)
+    ).cpu().detach().numpy().reshape(-1)
 
     # Show the metrics
-    gt_values = noisy_data['y_test'][window_size:]
+    gt_values = y_test
     predicted_values = y_pred_test
     mae = mean_absolute_error(gt_values, predicted_values)
     smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
@@ -401,65 +402,30 @@ def dlnr(noisy_data: dict,
     if VERBOSE:
         print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
 
-    if dlnr_metrics['R2'] < 0.7:
-        print('» The model is not able to learn the data. Please check the parameters.')
-        return None, dlnr_metrics
-
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
     df_denoised = noisy_data['df'].copy()
-    input_vars = list(df_denoised.columns)
-
-    x_sliding = noisy_data['df'][input_vars].values
-    y_sliding = noisy_data['df'][['y']]
-    df_to_denoise = SlidingWindowDataset(
-        x_sliding,
-        y_sliding,
-        window_size=window_size,
-        future=1,
-        cnn=IS_CNN
-    )
-
+    input_vars = list(set(df_denoised.columns) - set([target_var]))
     dlnr_model = DLNoiseReduction(
         model=model,
         criterion=criterion,
-        device=DEVICE,
-        is_ts=True,
-        is_cnn=IS_CNN
+        is_ts=False,
+        is_cnn=IS_CNN,
+        device=DEVICE
     )
-    dlnr_model.fit(df_to_denoise)
-    df_denoised[input_vars], _, x_gradients, y_gradients = dlnr_model.transform(
+    dlnr_model.fit(noisy_data['df'][input_vars].values, noisy_data['df'][target_var].values.reshape(-1, 1))
+    df_denoised[input_vars], df_denoised[target_var], x_gradients, y_gradients = dlnr_model.transform(
         nrr=0.02,
         nr_threshold=0.02,
-        max_epochs=5000,
+        max_epochs=10000,
         plot_progress=False,
         path_to_save_imgs=None,
-        denoise_y=False,
         save_gradients=save_gradients
     )
 
     if save_gradients:
-        print('» Saving gradients to: ', gradients_path)
-        print(f'Número de gradientes X: {len(x_gradients)}')
-        print(f'Número de gradientes Y: {len(y_gradients)}')
-
-        # Transform gradients to DataFrames
-        x_gradients_df = pd.DataFrame(x_gradients)
-        y_gradients_df = pd.DataFrame(y_gradients)
-
-        # Save gradients as parquet files
-        x_gradients_path = os.path.join(gradients_path, 'x_gradients.parquet')
-        y_gradients_path = os.path.join(gradients_path, 'y_gradients.parquet')
-
-        x_gradients_df.to_parquet(x_gradients_path, index=False)
-        y_gradients_df.to_parquet(y_gradients_path, index=False)
-
-        # with open(os.path.join(gradients_path, 'x_gradients.pkl'), 'wb') as f:
-        #     pickle.dump(x_gradients, f)
-
-        # with open(os.path.join(gradients_path, 'y_gradients.pkl'), 'wb') as f:
-        #     pickle.dump(y_gradients, f)
-        print('» Gradients saved to: ', gradients_path)
+        np.save(os.path.join(gradients_path, 'x_gradients.npy'), np.array(x_gradients))
+        np.save(os.path.join(gradients_path, 'y_gradients.npy'), np.array(y_gradients))
 
     return df_denoised, dlnr_metrics
 
@@ -850,20 +816,39 @@ def main():
         'should_train': TRAIN_DENOISING_METHOD,
     }
 
+    data = pd.read_parquet(os.path.join(DATA_PATH, 'clean.parquet'))
+    n_var = data.shape[1]-1
+    target_var = 'y'
+    if 'ETT' in DATA_PATH:
+        target_var = 'HULL'
+
     # DLNR - Deep Learning Noise Reduction
     dlnr_model_params = {
-        'hidden_size': 64,
-        'output_size': 1,
-        'num_layers': 1,
-        'dropout': 0.2,
-        'bidirectional': True
+        'n_layers': 10,
+        'hidden_layers': [
+            (n_var, 64),
+            (64, 128),
+            (128, 512),
+            (512, 1024),
+            (1024, 2048),
+            (2048, 2048),
+            (2048, 1024),
+            (1024, 512),
+            (512, 128),
+            (128, 1)
+        ],
+        'dropout_layers': [0.3] * 10,
+        'activation_func_layers': [nn.ReLU()] * 9 + [nn.Identity()],
+        'want_dropout': [False] * 10,
+        'want_linear': [True] * 10,
+        'want_activation': [True] * 10,
     }
     dlnr_params = {
         'batch_size': 64,
-        'lr': 0.001,
+        'lr': 0.01,
         'criterion': nn.MSELoss(),
         'optimizer': optim.Adam,
-        'epoch_scheduler': None,
+        'epoch_scheduler': 'ReduceLROnPlateau',  # Initialize as None; will be set dynamically
         'batch_scheduler': None,
         'epochs': 500,
         'patience': 15,
@@ -871,6 +856,7 @@ def main():
         # 'gradients_path': GRADIENTS_PATH,
         'should_train': TRAIN_DENOISING_METHOD,
         'model_params_dict': dlnr_model_params,
+        'target_var': target_var
     }
 
     # EMD - Empirical Mode Decomposition
@@ -994,7 +980,7 @@ def main():
         else:
             # Run the experiment for real data
             add_noise = args.noise != 0.0
-                
+
             experiment.run(
                 data_file=args.data_file,
                 add_noise=add_noise,

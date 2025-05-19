@@ -259,86 +259,88 @@ class DLNoiseReduction():
         epoch = 0
         apply_gradient = [True, True]
         # show_gradients = True
-        while epoch < max_epochs and np.array(apply_gradient).any() > 0:
-            x_tensor = torch.tensor(x_tensor, requires_grad=True)
-            y_tensor = torch.tensor(y_tensor, requires_grad=True)
+        with tqdm(total=max_epochs) as pbar1:
+            while epoch < max_epochs and np.array(apply_gradient).any() > 0:
+                x_tensor = torch.tensor(x_tensor, requires_grad=True)
+                y_tensor = torch.tensor(y_tensor, requires_grad=True)
 
-            # Calculate the gradients for X and Y performing a backpropagation step.
-            self._criterion.zero_grad()
+                # Calculate the gradients for X and Y performing a backpropagation step.
+                self._criterion.zero_grad()
 
-            y_predicted = self._model.forward(
-                x_tensor.float().to(self._device)
-            )
-            y_predicted.requires_grad_(True)
-            y_predicted.retain_grad()
+                y_predicted = self._model.forward(
+                    x_tensor.float().to(self._device)
+                )
+                y_predicted.requires_grad_(True)
+                y_predicted.retain_grad()
 
-            loss = self._criterion(
-                y_predicted,
-                y_tensor.float().to(self._device)
-            )
-            loss.backward()
+                loss = self._criterion(
+                    y_predicted,
+                    y_tensor.float().to(self._device)
+                )
+                loss.backward()
 
-            # Decide if the gradient is going to be applied or not
-            y_predicted_array = y_predicted.detach().cpu().numpy()
-            y_tensor_array = y_tensor.detach().cpu().numpy()
-            apply_gradient = np.abs(y_predicted_array - y_tensor_array)
-            apply_gradient = apply_gradient > nr_threshold
+                # Decide if the gradient is going to be applied or not
+                y_predicted_array = y_predicted.detach().cpu().numpy()
+                y_tensor_array = y_tensor.detach().cpu().numpy()
+                apply_gradient = np.abs(y_predicted_array - y_tensor_array)
+                apply_gradient = apply_gradient > nr_threshold
 
-            # Get the calculated gradients
-            grad_l_x = x_tensor.grad.detach().cpu().numpy()
-            grad_l_y = y_tensor.grad.detach().cpu().numpy()
+                # Get the calculated gradients
+                grad_l_x = x_tensor.grad.detach().cpu().numpy()
+                grad_l_y = y_tensor.grad.detach().cpu().numpy()
 
-            # Update the input data
-            x_tensor = x_tensor.detach().cpu().numpy()
-            y_tensor = y_tensor.detach().cpu().numpy()
+                # Update the input data
+                x_tensor = x_tensor.detach().cpu().numpy()
+                y_tensor = y_tensor.detach().cpu().numpy()
 
-            total_grad = np.concatenate((grad_l_x, grad_l_y), axis=1)
-            l2_grad = np.linalg.norm(total_grad)
-            grad_l_x = grad_l_x / l2_grad
-            grad_l_y = grad_l_y / l2_grad
+                total_grad = np.concatenate((grad_l_x, grad_l_y), axis=1)
+                l2_grad = np.linalg.norm(total_grad)
+                grad_l_x = grad_l_x / l2_grad
+                grad_l_y = grad_l_y / l2_grad
 
-            if save_gradients:
-                x_gradient_list.append(grad_l_x)
-                y_gradient_list.append(grad_l_y)
+                if save_gradients:
+                    x_gradient_list.append(grad_l_x)
+                    y_gradient_list.append(grad_l_y)
 
-            # if show_gradients:
-            #     print(grad_l_x*nrr*apply_gradient.sum(axis=1)[:, np.newaxis])
-            #     print('')
-            #     print(grad_l_x*nrr*apply_gradient)
-            #     a = input('Press Enter to continue...')
-            #     if a == 'q':
-            #         show_gradients = False
+                # if show_gradients:
+                #     print(grad_l_x*nrr*apply_gradient.sum(axis=1)[:, np.newaxis])
+                #     print('')
+                #     print(grad_l_x*nrr*apply_gradient)
+                #     a = input('Press Enter to continue...')
+                #     if a == 'q':
+                #         show_gradients = False
 
-            x_tensor -= grad_l_x*nrr*apply_gradient#.sum(axis=1)[:, np.newaxis]
-            if denoise_y:
-                y_tensor -= grad_l_y*nrr*apply_gradient#.sum(axis=1)[:, np.newaxis]
+                x_tensor -= grad_l_x*nrr*apply_gradient#.sum(axis=1)[:, np.newaxis]
+                if denoise_y:
+                    y_tensor -= grad_l_y*nrr*apply_gradient#.sum(axis=1)[:, np.newaxis]
 
-            # Plot the progression of noise reduction if specified
-            if plot_progress:
-                fig.suptitle(f'Epoch: {epoch} - Noise Reduction Progress')
+                # Plot the progression of noise reduction if specified
+                if plot_progress:
+                    fig.suptitle(f'Epoch: {epoch} - Noise Reduction Progress')
 
-                # Clear the plots
-                axes[0].clear()
-                axes[1].clear()
+                    # Clear the plots
+                    axes[0].clear()
+                    axes[1].clear()
 
-                # Plot the data
-                if self._x_noisy.shape[1] == 2:
-                    self._plot3D(axes, x_tensor, y_tensor)
-                elif self._x_noisy.shape[1] == 1:
-                    self._plot2D(axes, x_tensor, y_tensor)
-                else:
-                    raise ValueError('The input data must have 1 or 2 features in order to plotted')
+                    # Plot the data
+                    if self._x_noisy.shape[1] == 2:
+                        self._plot3D(axes, x_tensor, y_tensor)
+                    elif self._x_noisy.shape[1] == 1:
+                        self._plot2D(axes, x_tensor, y_tensor)
+                    else:
+                        raise ValueError('The input data must have 1 or 2 features in order to plotted')
 
-                if path_to_save_imgs:
-                    img_name = f"{path_to_save_imgs}/grafico_{epoch}.png"
-                    plt.savefig(img_name, dpi=300, bbox_inches='tight')
+                    if path_to_save_imgs:
+                        img_name = f"{path_to_save_imgs}/grafico_{epoch}.png"
+                        plt.savefig(img_name, dpi=300, bbox_inches='tight')
 
-                # Show the plots
-                display(fig)
-                # Clear the output
-                clear_output(wait=True)
+                    # Show the plots
+                    display(fig)
+                    # Clear the output
+                    clear_output(wait=True)
 
-            epoch += 1
+                epoch += 1
+                pbar1.update(1)
 
         if epoch >= max_epochs:
             print(f'Max epochs reached: {epoch}/{max_epochs}')
@@ -373,10 +375,10 @@ class DLNoiseReduction():
         """
         # Accelerate the runtime by finding the best cuda configuration
         torch.backends.cudnn.benchmark = True
-        try:
-            self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
-        except RuntimeError:
-            pass
+        # try:
+        #     self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
+        # except RuntimeError:
+        #     pass
 
         x_gradient_list = []
         y_gradient_list = []
@@ -405,6 +407,8 @@ class DLNoiseReduction():
                     y_predicted = self._model.forward(
                         x_tensor.float().to(self._device)
                     )
+                    y_predicted.requires_grad_(True)
+                    y_predicted.retain_grad()
 
                     # Add a dimension to match the shape of the y_tensor
                     y_predicted = y_predicted.unsqueeze(0)

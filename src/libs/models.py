@@ -133,8 +133,8 @@ class DenseTemporalModel(nn.Module):
         self.flatten = nn.Flatten()  # Aplana las dimensiones (window, n_features) a (window * n_features,)
         self.fc1 = nn.Linear(input_size, hidden_size)  # Primera capa densa
         self.fc2 = nn.Linear(hidden_size, hidden_size)  # Segunda capa densa
-        self.fc2 = nn.Linear(hidden_size, hidden_size)  # Segunda capa densa
-        self.fc3 = nn.Linear(hidden_size, output_size)  # Capa de salida
+        self.fc3 = nn.Linear(hidden_size, hidden_size)  # Segunda capa densa
+        self.fc4 = nn.Linear(hidden_size, output_size)  # Capa de salida
 
         # Función de activación
         self.sigmoid = nn.Sigmoid()
@@ -367,6 +367,33 @@ class ComplexLSTMModel(nn.Module):
         x = self.fc(x)
 
         return x
+
+
+class DenseTSModel(nn.Module):
+    def __init__(self, input_size, hidden_sizes=[32, 32], output_size=1):
+        super(DenseTSModel, self).__init__()
+
+        layers = []
+        layers.append(nn.Flatten())
+        last_size = input_size
+
+        # Añadir capas ocultas densas
+        for hidden_size in hidden_sizes:
+            layers.append(nn.Linear(last_size, hidden_size))
+            layers.append(nn.Tanh())
+            last_size = hidden_size
+
+        # Capa de salida
+        layers.append(nn.Linear(last_size, output_size))
+
+        # Agrupar las capas en una secuencia
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        """
+        Espera entrada de forma (batch_size, window_size * num_features)
+        """
+        return self.model(x)
 
 
 class DenoisingAutoencoder(nn.Module):
