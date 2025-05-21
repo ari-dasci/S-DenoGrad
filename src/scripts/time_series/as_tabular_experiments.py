@@ -402,6 +402,10 @@ def dlnr(noisy_data: dict,
     if VERBOSE:
         print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
 
+    if dlnr_metrics['R2'] < 0.7:
+        print('» The model is not able to learn the data. Please check the parameters.')
+        return None, dlnr_metrics
+
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
     df_denoised = noisy_data['df'].copy()
@@ -415,8 +419,8 @@ def dlnr(noisy_data: dict,
     )
     dlnr_model.fit(noisy_data['df'][input_vars].values, noisy_data['df'][target_var].values.reshape(-1, 1))
     df_denoised[input_vars], df_denoised[target_var], x_gradients, y_gradients = dlnr_model.transform(
-        nrr=0.02,
-        nr_threshold=0.02,
+        nrr=0.05,
+        nr_threshold=0.05,
         max_epochs=10000,
         plot_progress=False,
         path_to_save_imgs=None,

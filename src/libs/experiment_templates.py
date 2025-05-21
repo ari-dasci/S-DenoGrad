@@ -152,7 +152,7 @@ class BaseExperiment:
         self.denoised_data = {}
 
         # Model predictions and metrics
-        self.predictions_dict = {}
+        # self.predictions_dict = {}
         self.metrics_dict = {}
 
     def load_data(self, data_file: str, y_col_name: str) -> tuple:
@@ -272,17 +272,17 @@ class BaseExperiment:
 
         if 'XAI' not in self.metrics_dict:
             self.metrics_dict['XAI'] = {}
-            self.predictions_dict['XAI'] = {}
+            # self.predictions_dict['XAI'] = {}
 
         if subfix not in self.metrics_dict['XAI']:
             self.metrics_dict['XAI'][subfix] = {}
-            self.predictions_dict['XAI'][subfix] = {}
+            # self.predictions_dict['XAI'][subfix] = {}
 
         aux1 = f"train_{train_data_dict['df'].name}_test_{test_data_dict['df'].name}"
         aux2 = f"train_{train_data_dict['df'].name}_test_{test_data_dict['df'].name}"
 
         self.metrics_dict['XAI'][subfix][aux1] = metrics
-        self.predictions_dict['XAI'][subfix][aux2] = predictions
+        # self.predictions_dict['XAI'][subfix][aux2] = predictions
 
     def perform_original_xai_benchmark(self, model_params: dict) -> None:
         """
@@ -478,8 +478,6 @@ class BaseExperiment:
         self.denoised_data['y_test'] = y_test
 
         gt_values = self.noisy_data['df'].values
-        # if self.is_ts: TODO: borrar
-        #     gt_values = gt_values[:-1]
         predicted_values = self.denoised_data['df'].values
         mae = mean_absolute_error(gt_values, predicted_values)
         smape = symmetric_mean_absolute_percentage_error(gt_values, predicted_values)
@@ -794,7 +792,7 @@ class BaseExperiment:
         Raises:
             OSError: If there is an issue writing to the specified output path.
         """
-        self.predictions_dict = self.dictionary_arrays_to_list(self.predictions_dict)
+        # # self.predictions_dict = self.dictionary_arrays_to_list(self.predictions_dict)
         self.metrics_dict = self.dictionary_arrays_to_list(self.metrics_dict)
 
         # Create output directory if it doesn't exist
@@ -813,11 +811,11 @@ class BaseExperiment:
         cnn_str = 'cnn_' if self.is_cnn else ''
         sigma_str = f'sigma_{sigma}_' if add_noise else ''
         # Save predictions
-        with open(
-            os.path.join(self.out_path, f'{self.subfix_name}_{cnn_str}{sigma_str}predictions.json'),
-            'w',
-            encoding='utf-8') as file:
-            json.dump(self.predictions_dict, file, ensure_ascii=False, indent=4)
+        # with open(
+        #     os.path.join(self.out_path, f'{self.subfix_name}_{cnn_str}{sigma_str}predictions.json'),
+        #     'w',
+        #     encoding='utf-8') as file:
+        # #     json.dump(self.predictions_dict, file, ensure_ascii=False, indent=4)
 
         # Save metrics
         with open(

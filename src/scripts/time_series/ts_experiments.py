@@ -401,9 +401,9 @@ def dlnr(noisy_data: dict,
     if VERBOSE:
         print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
 
-    if dlnr_metrics['R2'] < 0.7:
-        print('» The model is not able to learn the data. Please check the parameters.')
-        return None, dlnr_metrics
+    # if dlnr_metrics['R2'] < 0.7:
+    #     print('» The model is not able to learn the data. Please check the parameters.')
+    #     return None, dlnr_metrics
 
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None

@@ -258,7 +258,7 @@ class DLNoiseReduction():
 
         epoch = 0
         apply_gradient = [True, True]
-        # show_gradients = True
+        a = 'a'
         with tqdm(total=max_epochs) as pbar1:
             while epoch < max_epochs and np.array(apply_gradient).any() > 0:
                 x_tensor = torch.tensor(x_tensor, requires_grad=True)
@@ -268,14 +268,14 @@ class DLNoiseReduction():
                 self._criterion.zero_grad()
 
                 y_predicted = self._model.forward(
-                    x_tensor.float().to(self._device)
+                    x_tensor.float().to(self._device).view(-1, x_tensor.shape[-1])
                 )
                 y_predicted.requires_grad_(True)
                 y_predicted.retain_grad()
 
                 loss = self._criterion(
                     y_predicted,
-                    y_tensor.float().to(self._device)
+                    y_tensor.float().to(self._device).view(-1, y_tensor.shape[-1])
                 )
                 loss.backward()
 
@@ -289,10 +289,6 @@ class DLNoiseReduction():
                 grad_l_x = x_tensor.grad.detach().cpu().numpy()
                 grad_l_y = y_tensor.grad.detach().cpu().numpy()
 
-                # Update the input data
-                x_tensor = x_tensor.detach().cpu().numpy()
-                y_tensor = y_tensor.detach().cpu().numpy()
-
                 total_grad = np.concatenate((grad_l_x, grad_l_y), axis=1)
                 l2_grad = np.linalg.norm(total_grad)
                 grad_l_x = grad_l_x / l2_grad
@@ -302,17 +298,13 @@ class DLNoiseReduction():
                     x_gradient_list.append(grad_l_x)
                     y_gradient_list.append(grad_l_y)
 
-                # if show_gradients:
-                #     print(grad_l_x*nrr*apply_gradient.sum(axis=1)[:, np.newaxis])
-                #     print('')
-                #     print(grad_l_x*nrr*apply_gradient)
-                #     a = input('Press Enter to continue...')
-                #     if a == 'q':
-                #         show_gradients = False
+                # Update the input data
+                x_tensor = x_tensor.detach().cpu().numpy()
+                y_tensor = y_tensor.detach().cpu().numpy()
 
-                x_tensor -= grad_l_x*nrr*apply_gradient#.sum(axis=1)[:, np.newaxis]
+                x_tensor -= grad_l_x*nrr*apply_gradient
                 if denoise_y:
-                    y_tensor -= grad_l_y*nrr*apply_gradient#.sum(axis=1)[:, np.newaxis]
+                    y_tensor -= grad_l_y*nrr*apply_gradient
 
                 # Plot the progression of noise reduction if specified
                 if plot_progress:
@@ -348,6 +340,130 @@ class DLNoiseReduction():
             print('Noise threshold reached in all data points at epoch: ', epoch)
 
         return x_tensor, y_tensor, x_gradient_list, y_gradient_list
+
+
+    # def _transform_time_series(
+    #     self,
+    #     nrr: float=0.05,
+    #     nr_threshold: float=0.01,
+    #     max_epochs: int=100,
+    #     denoise_y: bool=True,
+    #     save_gradients: bool=True
+    # ) -> Tuple[np.ndarray, np.ndarray]:
+    #     """
+    #     Decrease the noise level in the input data (x and y).
+    #     If plot_progress is True, the process will take considerably more time.
+
+    #     Args:
+    #         nrr (float): noise reduction rate. Default 0.0005.
+    #         nr_threshold (float): if the difference between the f(x') and y is
+    #             less than nr_threshold the gradient will be applied no more. Default 0.01.
+    #         max_epochs (int): maximum number of epochs. Default 100.
+    #         plot_progress (bool): whether to plot the noise reduction progress or not.
+    #             Default False.
+
+    #     Returns:
+    #         Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
+    #     """
+    #     # Accelerate the runtime by finding the best cuda configuration
+    #     torch.backends.cudnn.benchmark = True
+    #     # try:
+    #     #     self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
+    #     # except RuntimeError:
+    #     #     pass
+
+    #     x_gradient_list = []
+    #     y_gradient_list = []
+    #     self._model.train() # RNN backward allowed.
+    #     epoch = 0
+    #     more_gradients_to_apply = 1
+    #     with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
+    #         while epoch < max_epochs and more_gradients_to_apply:
+    #             n_window = 0
+    #             more_gradients_to_apply = 0
+                
+    #             # Iterate over the windows
+    #             for i, _ in enumerate(self._x_noisy):
+    #                 # Add a dimension to match the model requirements for time series
+    #                 # (batch, window, variables) and make it a tensor.
+    #                 x_tensor = torch.tensor(self._x_noisy[i][0]).unsqueeze(0)
+    #                 x_tensor.requires_grad_(True)
+    #                 y_tensor = torch.tensor(self._x_noisy[i][1]).unsqueeze(0)
+    #                 y_tensor.requires_grad_(True)
+
+    #                 # Calculate the gradients for X and Y performing a backpropagation step.
+    #                 # Set the gradients to zero
+    #                 self._criterion.zero_grad()
+
+    #                 # Predict the target for this iteration window
+    #                 y_predicted = self._model.forward(
+    #                     x_tensor.float().to(self._device)
+    #                 )
+    #                 y_predicted.requires_grad_(True)
+    #                 y_predicted.retain_grad()
+
+    #                 # Add a dimension to match the shape of the y_tensor
+    #                 y_predicted = y_predicted.unsqueeze(0)
+    #                 loss = self._criterion(
+    #                     y_predicted,
+    #                     y_tensor.float().to(self._device)
+    #                 )
+
+    #                 loss.backward()
+
+    #                 # Decide if the gradient is going to be applied or not based on the threshold
+    #                 y_predicted_array = y_predicted.detach().cpu().numpy()
+    #                 y_tensor_array = y_tensor.detach().cpu().numpy()
+    #                 apply_gradient = np.abs(y_predicted_array - y_tensor_array)
+    #                 apply_gradient = apply_gradient > nr_threshold
+    #                 more_gradients_to_apply += apply_gradient.sum()
+
+    #                 # Get the calculated gradients
+    #                 grad_l_x = x_tensor.grad.detach().cpu().numpy()
+    #                 # grad_l_y = y_tensor.grad.detach().cpu().numpy()
+
+    #                 # Get the shape of the window. In the last iteration it can be smaller.
+    #                 # window_size = grad_l_x.shape[1]
+    #                 # grad_l_y = np.tile(grad_l_y, (1, window_size, 1))
+    #                 # total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
+    #                 # l2_grad = np.linalg.norm(total_grad)
+    #                 l2_grad = np.linalg.norm(grad_l_x)
+
+    #                 if l2_grad:
+    #                     grad_l_x /= l2_grad
+    #                     # grad_l_y /= l2_grad
+
+    #                 # apply_gradient = apply_gradient.squeeze(axis=0)
+
+    #                 grad_l_x = grad_l_x.squeeze(axis=0)
+    #                 grad_l_x = grad_l_x*nrr*apply_gradient.item()
+    #                 grad_l_x_shape = grad_l_x.shape[0]
+    #                 if self.is_cnn:
+    #                     grad_l_x_shape = grad_l_x.shape[1]
+    #                     grad_l_x = grad_l_x.T
+
+    #                 if save_gradients:
+    #                     x_gradient_list.append(grad_l_x)
+    #                 self._x_noisy.X[n_window:n_window+grad_l_x_shape] -= grad_l_x
+
+    #                 # if denoise_y:
+    #                 #     grad_l_y = grad_l_y.mean()
+    #                 #     grad_l_y = grad_l_y*nrr*apply_gradient.item()
+
+    #                 #     if save_gradients:
+    #                 #         y_gradient_list.append(grad_l_y)
+    #                 #     self._x_noisy.Y[n_window:n_window+grad_l_y.shape[0]] -= grad_l_y
+
+    #                 n_window += 1
+    #                 pbar1.update(1)
+
+    #             epoch += 1
+    #     if epoch >= max_epochs:
+    #         print(f'Max epochs reached: {epoch/max_epochs}')
+    #     else:
+    #         print('Noise threshold reached in all data points.')
+
+    #     return self._x_noisy.X, self._x_noisy.Y, x_gradient_list, y_gradient_list
 
 
     def _transform_time_series(
@@ -387,16 +503,22 @@ class DLNoiseReduction():
         more_gradients_to_apply = 1
         with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
             while epoch < max_epochs and more_gradients_to_apply:
-                n_window = 0
                 more_gradients_to_apply = 0
-                # Iterate over the windows
 
-                for i, _ in enumerate(self._x_noisy):
-                    # Add a dimension to match the model requirements for time series
-                    # (batch, window, variables) and make it a tensor.
-                    x_tensor = torch.tensor(self._x_noisy[i][0]).unsqueeze(0)
+                batch_size = 32
+                loader = torch.utils.data.DataLoader(
+                    self._x_noisy,
+                    batch_size=batch_size,
+                    shuffle=False,
+                    num_workers=4
+                )
+
+                # Iterate over the windows
+                for i_loader , win_target in enumerate(loader):
+                    windows, targets = win_target
+                    x_tensor = windows.to(self._device).float()
+                    y_tensor = targets.to(self._device).float()
                     x_tensor.requires_grad_(True)
-                    y_tensor = torch.tensor(self._x_noisy[i][1]).unsqueeze(0)
                     y_tensor.requires_grad_(True)
 
                     # Calculate the gradients for X and Y performing a backpropagation step.
@@ -405,16 +527,15 @@ class DLNoiseReduction():
 
                     # Predict the target for this iteration window
                     y_predicted = self._model.forward(
-                        x_tensor.float().to(self._device)
-                    )
+                        x_tensor
+                    ).unsqueeze(1)
                     y_predicted.requires_grad_(True)
                     y_predicted.retain_grad()
 
                     # Add a dimension to match the shape of the y_tensor
-                    y_predicted = y_predicted.unsqueeze(0)
                     loss = self._criterion(
                         y_predicted,
-                        y_tensor.float().to(self._device)
+                        y_tensor
                     )
 
                     loss.backward()
@@ -443,16 +564,32 @@ class DLNoiseReduction():
 
                     # apply_gradient = apply_gradient.squeeze(axis=0)
 
-                    grad_l_x = grad_l_x.squeeze(axis=0)
-                    grad_l_x = grad_l_x*nrr*apply_gradient.item()
-                    grad_l_x_shape = grad_l_x.shape[0]
-                    if self.is_cnn:
-                        grad_l_x_shape = grad_l_x.shape[1]
-                        grad_l_x = grad_l_x.T
+                    # grad_l_x = grad_l_x.squeeze(axis=0)
+                    grad_l_x = grad_l_x*nrr*apply_gradient#.item()
 
-                    if save_gradients:
-                        x_gradient_list.append(grad_l_x)
-                    self._x_noisy.X[n_window:n_window+grad_l_x_shape] -= grad_l_x
+                    # TODO: Contemplate if the model is a CNN
+                    # grad_l_x_shape = grad_l_x.shape[0]
+                    # if self.is_cnn:
+                    #     grad_l_x_shape = grad_l_x.shape[1]
+                    #     grad_l_x = grad_l_x.T
+
+                    # if save_gradients:
+                    #     x_gradient_list.append(grad_l_x)
+                    
+                    
+                    batch_range = grad_l_x.shape[0]
+                    if self.is_cnn:
+                        batch_range = grad_l_x.shape[1]
+                    for mini_batch in range(batch_range):
+                        i_start = mini_batch + i_loader*batch_size
+                        i_end = i_start + grad_l_x.shape[1]
+                        current_grad_x = grad_l_x[mini_batch]
+
+                        if self.is_cnn:
+                            i_end = i_start + grad_l_x.shape[0]
+                            current_grad_x = grad_l_x[mini_batch].T
+
+                        self._x_noisy.X[i_start:i_end] -= current_grad_x
 
                     # if denoise_y:
                     #     grad_l_y = grad_l_y.mean()
@@ -462,7 +599,6 @@ class DLNoiseReduction():
                     #         y_gradient_list.append(grad_l_y)
                     #     self._x_noisy.Y[n_window:n_window+grad_l_y.shape[0]] -= grad_l_y
 
-                    n_window += 1
                     pbar1.update(1)
 
                 epoch += 1
