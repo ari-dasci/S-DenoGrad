@@ -430,7 +430,7 @@ class DenoisingAutoencoder(nn.Module):
             nn.Linear(128, 256),
             nn.ReLU(),
             nn.Linear(256, input_dim),
-            nn.Sigmoid()  # Para valores normalizados entre 0 y 1
+            # nn.Sigmoid()  # Para valores normalizados entre 0 y 1
         )
 
     def forward(self, x):

@@ -66,7 +66,7 @@ OUT_PATH = os.path.join(_CURRENT_DIR, 'out', 'insights', 'kl_divergence')
 
 methods_dict = {
     'dae': 'DAE',
-    'dlnr': 'DLNR',
+    'dlnr': 'DenoGrad',
     'emd': 'EMD',
     'kalman_filter': 'Kalman',
     'moving_average': 'MA',
@@ -234,6 +234,9 @@ def process_dataset(dataset_path, dataset, data_type, data_origin, noise_lvl, is
 
     df_kl = pd.DataFrame(kl_orig_denoised_dict)
     df_kl = df_kl[sorted(df_kl.columns)]
+
+    df_kl.columns = [col.upper().split('_')[0] for col in df_kl.columns]
+    df_kl.rename(columns={'DLNR': 'DenoGrad', 'MOVING': 'MA'}, inplace=True)
 
     create_heatmap(df_kl, dataset, data_type, data_origin, noise_lvl, is_real)
     create_barplot(df_kl, dataset, data_type, data_origin, noise_lvl, is_real)

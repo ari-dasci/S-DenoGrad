@@ -164,7 +164,7 @@ if __name__ == "__main__":
                     gradient_r2 = np.array(r2_metrics['dlnr'])
                     model_r2 = np.array(model_r2)
 
-                    names = ['DLNR (Ours)', model_name]
+                    names = ['DenoGrad (Ours)', model_name]
 
                     probs, fig = baycomp.two_on_multiple(
                         gradient_r2,

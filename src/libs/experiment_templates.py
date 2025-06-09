@@ -803,10 +803,11 @@ class BaseExperiment:
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
 
-        self.denoised_data['df'].to_parquet(
-            os.path.join(denoised_data_path, f'{self.subfix_name}_denoised.parquet'),
-            index=False
-        )
+        if sigma == 0.05:
+            self.denoised_data['df'].to_parquet(
+                os.path.join(denoised_data_path, f'{self.subfix_name}_denoised.parquet'),
+                index=False
+            )
 
         cnn_str = 'cnn_' if self.is_cnn else ''
         sigma_str = f'sigma_{sigma}_' if add_noise else ''
@@ -848,11 +849,13 @@ class BaseExperiment:
         if isinstance(array_d, dict):
             return {k: BaseExperiment.dictionary_arrays_to_list(v) for k, v in array_d.items()}
         elif isinstance(array_d, np.ndarray):
-            return array_d.tolist()
+            return [float(x) for x in array_d.tolist()]
         elif isinstance(array_d, pd.Series):
-            return array_d.to_list()
+            return [float(x) for x in array_d.to_list()]
+        elif isinstance(array_d, list):
+            return [float(x) if not isinstance(x, (list, dict)) else BaseExperiment.dictionary_arrays_to_list(x) for x in array_d]
         else:
-            return array_d
+            return float(array_d) if isinstance(array_d, (np.floating, int, float)) else array_d
 
     def run(self, data_file: str, y_col_name: str = '', add_noise: bool = False,
             sigma: float = 0.02, denoising_method: callable = None,

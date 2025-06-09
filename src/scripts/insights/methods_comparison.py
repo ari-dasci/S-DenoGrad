@@ -128,7 +128,7 @@ if __name__ == "__main__":
                         var_name='train_test',
                         value_name='R2'
                     )
-                    gradient_metrics_df['method'] = 'DLNR'
+                    gradient_metrics_df['method'] = 'DenoGrad'
 
                 for method in tqdm(os.listdir(dataset_path)):
                     if method == 'dlnr':

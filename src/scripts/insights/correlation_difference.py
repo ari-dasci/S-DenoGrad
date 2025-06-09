@@ -201,7 +201,7 @@ def main():
 
     methods_dict = {
         'dae': 'DAE',
-        'dlnr': 'DLNR',
+        'dlnr': 'DenoGrad',
         'emd': 'EMD',
         'kalman_filter': 'Kalman',
         'moving_average': 'MA',

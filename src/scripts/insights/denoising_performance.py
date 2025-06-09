@@ -197,8 +197,11 @@ def process_and_plot_metrics(metrics_dict, data_type, data_origin, dataset, out_
         synthetic_str = 'real' if data_origin == 'real' else 'synthetic'
         dataset_str = dataset.upper()
         data_str = f'{synthetic_str} {dataset_str}'
+        method_name = model.upper()
+        if method_name == 'DLNR':
+            method_name = 'DenoGrad'
         ax.set_title(
-            f"Denoising method: {model.upper()} - Data: {data_str}\n\
+            f"Denoising method: {method_name} - Data: {data_str}\n\
             Fitting: {fitting_str} - R2 score per model and scenario",
             fontsize=14
         )
