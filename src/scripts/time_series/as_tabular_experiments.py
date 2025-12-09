@@ -402,9 +402,10 @@ def dlnr(noisy_data: dict,
     if VERBOSE:
         print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
 
-    if dlnr_metrics['R2'] < 0.7:
-        print('» The model is not able to learn the data. Please check the parameters.')
-        return None, dlnr_metrics
+    # TODO: Uncomment the following lines to check the R2 score threshold
+    # if dlnr_metrics['R2'] < 0.7:
+    #     print('» The model is not able to learn the data. Please check the parameters.')
+    #     return None, dlnr_metrics
 
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
@@ -434,7 +435,7 @@ def dlnr(noisy_data: dict,
     return df_denoised, dlnr_metrics
 
 
-def empirical_mode_decomposition(noisy_data: dict, imgs_to_drop: int = 2) -> pd.DataFrame:
+def empirical_mode_decomposition(noisy_data: dict, imfs_to_drop: int = 2) -> pd.DataFrame:
     """
     Perform Empirical Mode Decomposition (EMD) on the input noisy data and reconstruct the signal 
     by summing the Intrinsic Mode Functions (IMFs) after dropping a specified number of
@@ -443,7 +444,7 @@ def empirical_mode_decomposition(noisy_data: dict, imgs_to_drop: int = 2) -> pd.
         noisy_data (dict): A dictionary containing the noisy data. It must have a key 'df' 
                            with a pandas DataFrame as its value, where each column represents 
                            a signal to be denoised.
-        imgs_to_drop (int, optional): The number of initial IMFs to drop during reconstruction. 
+        imfs_to_drop (int, optional): The number of initial IMFs to drop during reconstruction. 
                                       Defaults to 2.
     Returns:
         dict: A pandas DataFrame (wrapped in a dictionary) containing the denoised signals, 
@@ -459,7 +460,7 @@ def empirical_mode_decomposition(noisy_data: dict, imgs_to_drop: int = 2) -> pd.
         imfs = emd(df_data[col].values)
         # Reconstruction of the signal by summing the IMFs
         # after dropping the specified number of initial IMFs
-        df_denoised[col] = np.sum(imfs[imgs_to_drop:], axis=0)
+        df_denoised[col] = np.sum(imfs[imfs_to_drop:], axis=0)
     df_denoised = df_denoised.copy()
 
     return df_denoised
@@ -865,7 +866,7 @@ def main():
 
     # EMD - Empirical Mode Decomposition
     emd_method_params = {
-        'imgs_to_drop': 2
+        'imfs_to_drop': 2
     }
 
     # Kalman Filter

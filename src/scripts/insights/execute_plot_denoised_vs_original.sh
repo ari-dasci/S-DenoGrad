@@ -5,7 +5,7 @@ DATA_DIR="data"
 SCRIPT_PATH="/home/jjavier98/S-noise-gradient/src/scripts/insights/plot_denoised_vs_original.py"
 
 # Iterate over data types (tabular, time_series)
-for data_type in "tabular" "time_series"; do
+for data_type in "time_series"; do
     data_type_path="$DATA_DIR/$data_type"
     if [ ! -d "$data_type_path" ]; then
         continue
@@ -34,6 +34,10 @@ for data_type in "tabular" "time_series"; do
 
             for model_file in "$denoised_path"/*.parquet; do
                 model_name=$(basename "$model_file" | sed 's/_denoised\.parquet$//')
+
+                if [ $model_name != "dae" ]; then
+                    continue
+                fi
 
                 # Execute the Python script
                 python "$SCRIPT_PATH" --data_type "$data_type" \

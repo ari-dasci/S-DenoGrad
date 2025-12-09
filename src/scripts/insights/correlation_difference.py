@@ -189,6 +189,42 @@ def plot_and_save_correlation(df_corr, data_type, data_origin, dataset, out_path
     plt.close()
 
 
+def make_corr_diff_heatmap(dataset_path: str, data_type: str, data_origin: str, dataset: str,
+                           out_path: str):
+    """
+    Creates and saves a heatmap of correlation differences between noisy and denoised datasets.
+    Parameters:
+        dataset_path (str): Path to the dataset folder.
+        data_type (str): Type of data (e.g., 'tabular', 'time_series').
+        data_origin (str): Origin of data (e.g., 'real', 'synthetic').
+        dataset (str): Dataset name.
+        out_path (str): Path to save the output heatmap.
+    """
+    dataset_path = dataset_path.replace('out', 'data')
+    noisy_df = pd.read_parquet(os.path.join(dataset_path, 'clean.parquet'))
+    noisy_corr = noisy_df.corr()
+
+    denoised_df = None
+    for dataset_2 in os.listdir(os.path.join(dataset_path, 'denoised')):
+        method_name = dataset_2.split('_')[0]
+        denoised_df = pd.read_parquet(os.path.join(dataset_path, 'denoised', dataset_2))
+        denoised_corr = denoised_df.corr()
+
+        diff_corr = abs(denoised_corr - noisy_corr)
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(diff_corr, annot=True, fmt=".2f", cmap='coolwarm', square=True,
+                    cbar_kws={"shrink": .8})
+        plt.title(f'Correlation Difference Heatmap - {method_name}')
+        plt.xticks(rotation=45)
+        plt.yticks(rotation=0)
+        plt.tight_layout()
+
+        fig_path = os.path.join(out_path, data_type, data_origin, dataset)
+        make_dir(fig_path)
+        plt.savefig(os.path.join(fig_path, f'correlation_diff_{method_name}.png'), dpi=300)
+        plt.close()
+
+
 def main():
     """
     Main function to analyze correlation differences across datasets and denoising methods.
@@ -237,6 +273,8 @@ def main():
 
                 # Plot and save the correlation differences
                 plot_and_save_correlation(df_corr, data_type, data_origin, dataset, OUT_PATH)
+                make_corr_diff_heatmap(dataset_path, data_type, data_origin, dataset, OUT_PATH)
+
 
 # Main
 if __name__ == "__main__":

@@ -129,8 +129,8 @@ def create_heatmap(df_kl, dataset, data_type, data_origin, noise_lvl, is_real):
         f"KL divergence per Variable and Method\nData: {data_str}",
         fontsize=14
     )
-    ax.set_ylabel("Methods", fontsize=12)
-    ax.set_xlabel("Variables", fontsize=12)
+    ax.set_ylabel("Variables", fontsize=12)
+    ax.set_xlabel("Methods", fontsize=12)
 
     fig_path = os.path.join(OUT_PATH, data_type, data_origin, dataset)
     make_dir(fig_path)
@@ -189,7 +189,7 @@ def create_barplot(df_kl, dataset, data_type, data_origin, noise_lvl, is_real):
         fontsize=14
     )
     ax.set_ylabel("KL mean", fontsize=12)
-    ax.set_xlabel("Models", fontsize=12)
+    ax.set_xlabel("Methods", fontsize=12)
     ax.grid(axis="y", linestyle="--", alpha=0.7)
 
     fig_path = os.path.join(OUT_PATH, data_type, data_origin, dataset)

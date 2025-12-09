@@ -401,6 +401,7 @@ def dlnr(noisy_data: dict,
     if VERBOSE:
         print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
 
+    # TODO: Uncomment the following lines to check the R2 score threshold
     # if dlnr_metrics['R2'] < 0.7:
     #     print('» The model is not able to learn the data. Please check the parameters.')
     #     return None, dlnr_metrics

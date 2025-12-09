@@ -166,6 +166,11 @@ if __name__ == "__main__":
 
                     names = ['DenoGrad (Ours)', model_name]
 
+                    if len(gradient_r2) != len(model_r2):
+                        print(f"Skipping {model_name} in {dict_name} due to length mismatch.")
+                        print(f"DenoGrad R2 length: {len(gradient_r2)}, Model R2 length: {len(model_r2)}")
+                        continue
+
                     probs, fig = baycomp.two_on_multiple(
                         gradient_r2,
                         model_r2,

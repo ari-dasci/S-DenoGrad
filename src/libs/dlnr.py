@@ -498,7 +498,7 @@ class DLNoiseReduction():
 
         x_gradient_list = []
         y_gradient_list = []
-        self._model.train() # RNN backward allowed.
+        # self._model.train() # RNN backward allowed.
         epoch = 0
         more_gradients_to_apply = 1
         with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
@@ -557,9 +557,9 @@ class DLNoiseReduction():
                     # total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
                     # l2_grad = np.linalg.norm(total_grad)
                     l2_grad = np.linalg.norm(grad_l_x)
-
-                    if l2_grad:
-                        grad_l_x /= l2_grad
+                    if not l2_grad:
+                        l2_grad += 1e-8  # Avoid division by zero
+                    grad_l_x /= l2_grad
                         # grad_l_y /= l2_grad
 
                     # apply_gradient = apply_gradient.squeeze(axis=0)

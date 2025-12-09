@@ -803,7 +803,7 @@ class BaseExperiment:
         if not os.path.exists(self.out_path):
             os.makedirs(self.out_path)
 
-        if sigma == 0.05:
+        if sigma - 0.05 < 1e-5 or 'synthetic' not in self.data_path:
             self.denoised_data['df'].to_parquet(
                 os.path.join(denoised_data_path, f'{self.subfix_name}_denoised.parquet'),
                 index=False

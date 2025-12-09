@@ -105,6 +105,12 @@ parser.add_argument(
         'kalman_filter', 'moving_average', 'pca', 'resnet', 'wavelet_transform']"
 )
 parser.add_argument(
+    '--noise',
+    type=float,
+    default=0.0,
+    help="Noise level to add to the data. Default is 0.0."
+)
+parser.add_argument(
     '--slurm_id',
     type=str,
     default=None,
@@ -402,9 +408,10 @@ def dlnr(noisy_data: dict,
     if VERBOSE:
         print(f'NN metrics {json.dumps(dlnr_metrics, indent=4)}')
 
-    if dlnr_metrics['R2'] < 0.7: #TODO: change threshold as needed
-        print('» The model is not able to learn the data. Please check the parameters.')
-        return None, dlnr_metrics
+    # TODO: Uncomment the following lines to check the R2 score threshold
+    # if dlnr_metrics['R2'] < 0.7: #TODO: change threshold as needed
+    #     print('» The model is not able to learn the data. Please check the parameters.')
+    #     return None, dlnr_metrics
 
     ## Perform gradient-based denoising method
     save_gradients = gradients_path is not None
@@ -434,7 +441,7 @@ def dlnr(noisy_data: dict,
     return df_denoised, dlnr_metrics
 
 
-def empirical_mode_decomposition(noisy_data: dict, imgs_to_drop: int = 2) -> pd.DataFrame:
+def empirical_mode_decomposition(noisy_data: dict, imfs_to_drop: int = 2) -> pd.DataFrame:
     """
     Perform Empirical Mode Decomposition (EMD) on the input noisy data and reconstruct the signal 
     by summing the Intrinsic Mode Functions (IMFs) after dropping a specified number of
@@ -443,7 +450,7 @@ def empirical_mode_decomposition(noisy_data: dict, imgs_to_drop: int = 2) -> pd.
         noisy_data (dict): A dictionary containing the noisy data. It must have a key 'df' 
                            with a pandas DataFrame as its value, where each column represents 
                            a signal to be denoised.
-        imgs_to_drop (int, optional): The number of initial IMFs to drop during reconstruction. 
+        imfs_to_drop (int, optional): The number of initial IMFs to drop during reconstruction. 
                                       Defaults to 2.
     Returns:
         dict: A pandas DataFrame (wrapped in a dictionary) containing the denoised signals, 
@@ -459,7 +466,7 @@ def empirical_mode_decomposition(noisy_data: dict, imgs_to_drop: int = 2) -> pd.
         imfs = emd(df_data[col].values)
         # Reconstruction of the signal by summing the IMFs
         # after dropping the specified number of initial IMFs
-        df_denoised[col] = np.sum(imfs[imgs_to_drop:], axis=0)
+        df_denoised[col] = np.sum(imfs[imfs_to_drop:], axis=0)
     df_denoised = df_denoised.copy()
 
     return df_denoised
@@ -804,7 +811,7 @@ def main():
         'test_size': 0.2,
         'random_state': 42,
         'batch_size': 64,
-        'latent_dim': 32,
+        'latent_dim': 8,
         'lr': 0.001,
         'criterion': nn.MSELoss(),
         'optimizer': optim.Adam,
@@ -833,7 +840,7 @@ def main():
 
     # EMD - Empirical Mode Decomposition
     emd_method_params = {
-        'imgs_to_drop': 2
+        'imfs_to_drop': 2
     }
 
     # Kalman Filter
@@ -951,10 +958,12 @@ def main():
                 )
         else:
             # Run the experiment for real data
+            add_noise = args.noise > 1e-5
+
             experiment.run(
                 data_file=args.data_file,
-                add_noise=False,
-                sigma=0.05,
+                add_noise=add_noise,
+                sigma=args.noise,
                 denoising_method=denoising_dict['method'],
                 denoising_method_params=denoising_dict['params'],
                 xai_models_params=xai_models_parms
