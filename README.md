@@ -20,9 +20,7 @@ Unlike conventional techniques that simply remove noisy instances or significant
 ## 🛠️ Installation
 
 ```bash
-git clone [https://github.com/your-username/DenoGrad.git](https://github.com/your-username/DenoGrad.git)
-cd DenoGrad
-pip install -r requirements.txt
+pip install denograd
 ```
 
 ## 📖 Basic Usage
@@ -32,10 +30,27 @@ from denograd import DenoGrad
 
 # Example usage (adapt to your actual API)
 # Initialize the denoiser with your reference model
-denoiser = DenoGrad(model=my_deep_model)
+denoiser = DenoGrad(
+    model=my_deep_model,
+    criterion=nn.MSE(),
+    is_ts=False,
+    is_cnn=False
+)
+
+# Fit the noisy data
+denoiser.fit(x_noisy, y_noisy)
 
 # Denoise the dataset
-clean_data = denoiser.denoise(noisy_data)
+x_clean, y_clean, x_gradients, y_gradients = transform(
+    nrr = 0.05,
+    nr_threshold = 0.01,
+    max_epochs = 200,
+    plot_progress = False, # 2D and 3D data exclusive.
+    path_to_save_imgs = '',
+    denoise_y = True, # It is recommended to set to False for time series (TS) problems.
+    batch_size = 1014, # Only used in TS problems.
+    save_gradients = True # Save all the gradients calculated through the denoising process.
+)
 ```
 
 ## 📝 Citation

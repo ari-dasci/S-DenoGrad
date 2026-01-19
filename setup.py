@@ -5,9 +5,10 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="denograd",
-    version="0.1.0",
+    version="0.1.1",
     author="JJavier98",
-    description="Reduces the noise level of the input data of a Neural Network",
+    description="Instance noise reduction framework based on Deep Learning gradients agnostic to \
+        the network architecture.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     py_modules=["denograd"],

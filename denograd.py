@@ -31,15 +31,26 @@ class DenoGrad():
         Args:
             model (nn.Module): neural network model already trained.
             criterion (nn.modules.loss._Loss): loss function.
-            is_ts (bool): if the model is prepared to work with time series. Deafult False.
+            device (torch.device, optional): device to run calculations on.
+                If None, it will try to use CUDA if available, else CPU.
+            is_ts (bool): if the model is prepared to work with time series. Default False.
+            is_cnn (bool): if the model is a CNN. Default False.
         """
-        self._model = model
-        self._criterion = criterion
-        self._device = torch.device('cuda') if device is None else device
-        self._x_noisy = None
-        self._y_noisy = None
-        self.is_ts = is_ts
-        self.is_cnn = is_cnn
+        self._model: nn.Module = model
+        self._criterion: nn.modules.loss._Loss = criterion
+        if device is None and torch.cuda.is_available():
+            self._device: torch.device = torch.device('cuda')
+        else:
+            self._device: torch.device = torch.device('cpu')
+        self._x_noisy: np.ndarray = None
+        self._y_noisy: np.ndarray = None
+        self.is_ts: bool = is_ts
+        self.is_cnn: bool = is_cnn
+
+    def __repr__(self):
+        return (f"DenoGrad(model={self._model.__class__.__name__}, "
+                f"device={self._device}, is_ts={self.is_ts}, is_cnn={self.is_cnn})")
+
 
 
     # Getters
@@ -163,7 +174,7 @@ class DenoGrad():
         Plot the denoised data along with the original data in a 2D plot.
 
         Args:
-            axes (Axes): matplotlib axes object used to plot the data.
+            axes (matplotlib.axes.Axes): matplotlib axes object used to plot the data.
             x (np.ndarray): denoised X input data.
             y (np.ndarray): donoised y input data.
         """
@@ -194,7 +205,7 @@ class DenoGrad():
         Plot the denoised data along with the original data in a 3D plot.
 
         Args:
-            axes (Axes): matplotlib axes object used to plot the data.
+            axes (matplotlib.axes.Axes): matplotlib axes object used to plot the data.
             x (np.ndarray): denoised X input data.
             y (np.ndarray): donoised y input data.
         """
@@ -225,7 +236,7 @@ class DenoGrad():
         max_epochs: int=100,
         plot_progress: bool=False,
         denoise_y: bool=True,
-        path_to_save_imgs: str=None,
+        path_to_save_imgs: str='',
         save_gradients: bool=True
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
@@ -248,6 +259,7 @@ class DenoGrad():
         x_gradient_list = []
         y_gradient_list = []
 
+        fig = plt.figure()
         if plot_progress:
             if self._x_noisy.shape[1] == 2:
                 fig, axes = plt.subplots(1, 2, subplot_kw={'projection': '3d'}, figsize=(15, 8))
@@ -348,7 +360,7 @@ class DenoGrad():
         nrr: float=0.05,
         nr_threshold: float=0.01,
         max_epochs: int=100,
-        denoise_y: bool=True,
+        batch_size: int=1000,
         save_gradients: bool=True
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
@@ -374,7 +386,10 @@ class DenoGrad():
         y_gradient_list = []
         epoch = 0
         more_gradients_to_apply = 1
-        batch_size = 32
+        # For noise reduction on inputs, batch size mainly affects VRAM usage and speed,
+        # not the optimization trajectory itself (unlike training weights).
+        # We cap the batch size at the number of available windows.
+        batch_size = min(batch_size, len(self._x_noisy))
 
         with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
             while epoch < max_epochs and more_gradients_to_apply:
@@ -424,14 +439,15 @@ class DenoGrad():
                     # Decide if the gradient is going to be applied or not based on the threshold
                     y_predicted_array = y_predicted.detach().cpu().numpy()
                     y_tensor_array = y_tensor.detach().cpu().numpy()
-                    
-                    # Ensure arrays have the same shape before subtraction to avoid broadcasting errors
+
+                    # Ensure arrays have the same shape before subtraction to avoid broadcasting
+                    # errors
                     if y_predicted_array.shape != y_tensor_array.shape:
                         if y_predicted_array.ndim == y_tensor_array.ndim + 1:
                             y_predicted_array = y_predicted_array.squeeze(-1)
                         if y_tensor_array.ndim == y_predicted_array.ndim + 1:
                             y_tensor_array = y_tensor_array.squeeze(-1)
-                    
+
                     apply_gradient = np.abs(y_predicted_array - y_tensor_array)
                     apply_gradient = apply_gradient > nr_threshold
                     more_gradients_to_apply += apply_gradient.sum()
@@ -478,6 +494,9 @@ class DenoGrad():
                     # Apply updates atomically
                     np.add.at(self._x_noisy.X, indices_flat, -grad_flat)
 
+                    if save_gradients:
+                        x_gradient_list.append(grad_l_x)
+
                     # Update progress bar by the actual number of items processed
                     pbar1.update(current_batch_size)
 
@@ -492,24 +511,30 @@ class DenoGrad():
 
     # Public methods
     # --------------------------------------------------------------------------
-    def fit(self, x: Union[np.array, Dataset], y: np.array = None) -> None:
+    def fit(self, x: Union[np.ndarray, Dataset], y: np.ndarray = None) -> 'DenoGrad':
         """
         Fit the model to the input data.
 
         Args:
-            x (np.array): array-like of shape (n_samples, n_features).
+            x (np.ndarray): array-like of shape (n_samples, n_features).
                 The training input samples.
-            y (np.array): array-like of shape (n_samples, n_targets).
+            y (np.ndarray): array-like of shape (n_samples, n_targets).
                 The target values (real numbers).
+        
+        Returns:
+            self: returns an instance of self.
         """
         if y is not None:
-            assert not self.is_ts, 'Model set to work with time series but «y» has been provided.'
+            assert not self.is_ts, "Model expected time series data (is_ts=True) but 'y' \
+                WAS provided."
             self._y_noisy = y.copy()
             self._x_noisy = x.copy()
         else:
-            assert self.is_ts, 'Model prepared to work with tabular data but no «y» has been \
-                provided.'
+            assert self.is_ts, "Model expected static tabular data (is_ts=False) but 'y' \
+                was NOT provided."
             self._x_noisy = x.copy()
+
+        return self
 
 
     def transform(
@@ -519,7 +544,8 @@ class DenoGrad():
         max_epochs: int=100,
         plot_progress: bool=False,
         denoise_y: bool=True,
-        path_to_save_imgs: str=None,
+        path_to_save_imgs: str='',
+        batch_size: int=1000,
         save_gradients: bool=True
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
@@ -556,7 +582,7 @@ class DenoGrad():
                 nrr=nrr,
                 nr_threshold=nr_threshold,
                 max_epochs=max_epochs,
-                denoise_y=denoise_y,
+                batch_size=batch_size,
                 save_gradients=save_gradients
             )
 
@@ -571,7 +597,8 @@ class DenoGrad():
         nr_threshold: float=0.01,
         max_epochs: int=100,
         plot_progress: bool=False,
-        path_to_save_imgs: str=None,
+        path_to_save_imgs: str='',
+        batch_size: int=1000,
         save_gradients: bool=True
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
@@ -602,6 +629,7 @@ class DenoGrad():
             max_epochs=max_epochs,
             plot_progress=plot_progress,
             path_to_save_imgs=path_to_save_imgs,
+            batch_size=batch_size,
             save_gradients=save_gradients
         )
 
