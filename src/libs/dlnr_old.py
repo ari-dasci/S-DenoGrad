@@ -258,6 +258,7 @@ class DLNoiseReduction():
 
         epoch = 0
         apply_gradient = [True, True]
+        a = 'a'
         with tqdm(total=max_epochs) as pbar1:
             while epoch < max_epochs and np.array(apply_gradient).any() > 0:
                 x_tensor = torch.tensor(x_tensor, requires_grad=True)
@@ -343,6 +344,130 @@ class DLNoiseReduction():
         return x_tensor, y_tensor, x_gradient_list, y_gradient_list
 
 
+    # def _transform_time_series(
+    #     self,
+    #     nrr: float=0.05,
+    #     nr_threshold: float=0.01,
+    #     max_epochs: int=100,
+    #     denoise_y: bool=True,
+    #     save_gradients: bool=True
+    # ) -> Tuple[np.ndarray, np.ndarray]:
+    #     """
+    #     Decrease the noise level in the input data (x and y).
+    #     If plot_progress is True, the process will take considerably more time.
+
+    #     Args:
+    #         nrr (float): noise reduction rate. Default 0.0005.
+    #         nr_threshold (float): if the difference between the f(x') and y is
+    #             less than nr_threshold the gradient will be applied no more. Default 0.01.
+    #         max_epochs (int): maximum number of epochs. Default 100.
+    #         plot_progress (bool): whether to plot the noise reduction progress or not.
+    #             Default False.
+
+    #     Returns:
+    #         Tuple[np.ndarray, np.ndarray]: noise-reduced input data.
+    #     """
+    #     # Accelerate the runtime by finding the best cuda configuration
+    #     torch.backends.cudnn.benchmark = True
+    #     # try:
+    #     #     self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
+    #     # except RuntimeError:
+    #     #     pass
+
+    #     x_gradient_list = []
+    #     y_gradient_list = []
+    #     self._model.train() # RNN backward allowed.
+    #     epoch = 0
+    #     more_gradients_to_apply = 1
+    #     with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
+    #         while epoch < max_epochs and more_gradients_to_apply:
+    #             n_window = 0
+    #             more_gradients_to_apply = 0
+                
+    #             # Iterate over the windows
+    #             for i, _ in enumerate(self._x_noisy):
+    #                 # Add a dimension to match the model requirements for time series
+    #                 # (batch, window, variables) and make it a tensor.
+    #                 x_tensor = torch.tensor(self._x_noisy[i][0]).unsqueeze(0)
+    #                 x_tensor.requires_grad_(True)
+    #                 y_tensor = torch.tensor(self._x_noisy[i][1]).unsqueeze(0)
+    #                 y_tensor.requires_grad_(True)
+
+    #                 # Calculate the gradients for X and Y performing a backpropagation step.
+    #                 # Set the gradients to zero
+    #                 self._criterion.zero_grad()
+
+    #                 # Predict the target for this iteration window
+    #                 y_predicted = self._model.forward(
+    #                     x_tensor.float().to(self._device)
+    #                 )
+    #                 y_predicted.requires_grad_(True)
+    #                 y_predicted.retain_grad()
+
+    #                 # Add a dimension to match the shape of the y_tensor
+    #                 y_predicted = y_predicted.unsqueeze(0)
+    #                 loss = self._criterion(
+    #                     y_predicted,
+    #                     y_tensor.float().to(self._device)
+    #                 )
+
+    #                 loss.backward()
+
+    #                 # Decide if the gradient is going to be applied or not based on the threshold
+    #                 y_predicted_array = y_predicted.detach().cpu().numpy()
+    #                 y_tensor_array = y_tensor.detach().cpu().numpy()
+    #                 apply_gradient = np.abs(y_predicted_array - y_tensor_array)
+    #                 apply_gradient = apply_gradient > nr_threshold
+    #                 more_gradients_to_apply += apply_gradient.sum()
+
+    #                 # Get the calculated gradients
+    #                 grad_l_x = x_tensor.grad.detach().cpu().numpy()
+    #                 # grad_l_y = y_tensor.grad.detach().cpu().numpy()
+
+    #                 # Get the shape of the window. In the last iteration it can be smaller.
+    #                 # window_size = grad_l_x.shape[1]
+    #                 # grad_l_y = np.tile(grad_l_y, (1, window_size, 1))
+    #                 # total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
+    #                 # l2_grad = np.linalg.norm(total_grad)
+    #                 l2_grad = np.linalg.norm(grad_l_x)
+
+    #                 if l2_grad:
+    #                     grad_l_x /= l2_grad
+    #                     # grad_l_y /= l2_grad
+
+    #                 # apply_gradient = apply_gradient.squeeze(axis=0)
+
+    #                 grad_l_x = grad_l_x.squeeze(axis=0)
+    #                 grad_l_x = grad_l_x*nrr*apply_gradient.item()
+    #                 grad_l_x_shape = grad_l_x.shape[0]
+    #                 if self.is_cnn:
+    #                     grad_l_x_shape = grad_l_x.shape[1]
+    #                     grad_l_x = grad_l_x.T
+
+    #                 if save_gradients:
+    #                     x_gradient_list.append(grad_l_x)
+    #                 self._x_noisy.X[n_window:n_window+grad_l_x_shape] -= grad_l_x
+
+    #                 # if denoise_y:
+    #                 #     grad_l_y = grad_l_y.mean()
+    #                 #     grad_l_y = grad_l_y*nrr*apply_gradient.item()
+
+    #                 #     if save_gradients:
+    #                 #         y_gradient_list.append(grad_l_y)
+    #                 #     self._x_noisy.Y[n_window:n_window+grad_l_y.shape[0]] -= grad_l_y
+
+    #                 n_window += 1
+    #                 pbar1.update(1)
+
+    #             epoch += 1
+    #     if epoch >= max_epochs:
+    #         print(f'Max epochs reached: {epoch/max_epochs}')
+    #     else:
+    #         print('Noise threshold reached in all data points.')
+
+    #     return self._x_noisy.X, self._x_noisy.Y, x_gradient_list, y_gradient_list
+
+
     def _transform_time_series(
         self,
         nrr: float=0.05,
@@ -368,18 +493,21 @@ class DLNoiseReduction():
         """
         # Accelerate the runtime by finding the best cuda configuration
         torch.backends.cudnn.benchmark = True
-        self._model.train()
+        # try:
+        #     self._model.lstm.flatten_parameters() # compact weights to reduce memory usage.
+        # except RuntimeError:
+        #     pass
 
         x_gradient_list = []
         y_gradient_list = []
+        # self._model.train() # RNN backward allowed.
         epoch = 0
         more_gradients_to_apply = 1
-        batch_size = 32
-
         with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
             while epoch < max_epochs and more_gradients_to_apply:
                 more_gradients_to_apply = 0
 
+                batch_size = 32
                 loader = torch.utils.data.DataLoader(
                     self._x_noisy,
                     batch_size=batch_size,
@@ -402,18 +530,11 @@ class DLNoiseReduction():
                     # Predict the target for this iteration window
                     y_predicted = self._model.forward(
                         x_tensor
-                    )
-
-                    # Ensure shapes match for loss calculation
-                    if y_predicted.shape != y_tensor.shape:
-                        if y_predicted.ndim == y_tensor.ndim + 1:
-                            y_predicted = y_predicted.squeeze(-1)
-                        if y_tensor.ndim == y_predicted.ndim + 1:
-                            y_tensor = y_tensor.squeeze(-1)
-
+                    ).unsqueeze(1)
                     y_predicted.requires_grad_(True)
                     y_predicted.retain_grad()
 
+                    # Add a dimension to match the shape of the y_tensor
                     loss = self._criterion(
                         y_predicted,
                         y_tensor
@@ -424,66 +545,67 @@ class DLNoiseReduction():
                     # Decide if the gradient is going to be applied or not based on the threshold
                     y_predicted_array = y_predicted.detach().cpu().numpy()
                     y_tensor_array = y_tensor.detach().cpu().numpy()
-                    
-                    # Ensure arrays have the same shape before subtraction to avoid broadcasting errors
-                    if y_predicted_array.shape != y_tensor_array.shape:
-                        if y_predicted_array.ndim == y_tensor_array.ndim + 1:
-                            y_predicted_array = y_predicted_array.squeeze(-1)
-                        if y_tensor_array.ndim == y_predicted_array.ndim + 1:
-                            y_tensor_array = y_tensor_array.squeeze(-1)
-                    
                     apply_gradient = np.abs(y_predicted_array - y_tensor_array)
                     apply_gradient = apply_gradient > nr_threshold
                     more_gradients_to_apply += apply_gradient.sum()
 
-                    # Ensure apply_gradient shape is (B, 1, 1) for broadcasting against (B, W, F)
-                    while apply_gradient.ndim < 3:
-                        apply_gradient = np.expand_dims(apply_gradient, axis=-1)
-
                     # Get the calculated gradients
                     grad_l_x = x_tensor.grad.detach().cpu().numpy()
+                    # grad_l_y = y_tensor.grad.detach().cpu().numpy()
 
+                    # Get the shape of the window. In the last iteration it can be smaller.
+                    # window_size = grad_l_x.shape[1]
+                    # grad_l_y = np.tile(grad_l_y, (1, window_size, 1))
+                    # total_grad = np.concatenate((grad_l_x, grad_l_y), axis=2)
+                    # l2_grad = np.linalg.norm(total_grad)
                     l2_grad = np.linalg.norm(grad_l_x)
                     if not l2_grad:
                         l2_grad += 1e-8  # Avoid division by zero
                     grad_l_x /= l2_grad
+                        # grad_l_y /= l2_grad
 
+                    # apply_gradient = apply_gradient.squeeze(axis=0)
+
+                    # grad_l_x = grad_l_x.squeeze(axis=0)
+                    grad_l_x = grad_l_x*nrr*apply_gradient#.item()
+
+                    # TODO: Contemplate if the model is a CNN
+                    # grad_l_x_shape = grad_l_x.shape[0]
+                    # if self.is_cnn:
+                    #     grad_l_x_shape = grad_l_x.shape[1]
+                    #     grad_l_x = grad_l_x.T
+
+                    # if save_gradients:
+                    #     x_gradient_list.append(grad_l_x)
+                    
+                    
+                    batch_range = grad_l_x.shape[0]
                     if self.is_cnn:
-                        # (B, F, W) -> (B, W, F)
-                        grad_l_x = grad_l_x.transpose(0, 2, 1)
+                        batch_range = grad_l_x.shape[1]
+                    for mini_batch in range(batch_range):
+                        i_start = mini_batch + i_loader*batch_size
+                        i_end = i_start + grad_l_x.shape[1]
+                        current_grad_x = grad_l_x[mini_batch]
 
-                    # Expand dimensions of apply_gradient to match grad_l_x for broadcasting
-                    # apply_gradient usually (B, 1, 1) or (B, O).
-                    # grad_l_x is (B, W, F).
-                    # Broadcasting should handle (B, 1, 1) against (B, W, F).
-                    # Ensure nrr is applied
-                    grad_l_x = grad_l_x * nrr * apply_gradient
+                        if self.is_cnn:
+                            i_end = i_start + grad_l_x.shape[0]
+                            current_grad_x = grad_l_x[mini_batch].T
 
-                    # Vectorized update of X using np.add.at
-                    current_batch_size = grad_l_x.shape[0]
-                    window_size_dim = grad_l_x.shape[1]
+                        self._x_noisy.X[i_start:i_end] -= current_grad_x
 
-                    # Construct indices
-                    # Start index for each batch item
-                    start_indices = np.arange(current_batch_size) + i_loader * batch_size
-                    # Offsets for the window
-                    offsets = np.arange(window_size_dim)
-                    # Create 2D indices (B, W)
-                    indices = start_indices[:, None] + offsets[None, :]
+                    # if denoise_y:
+                    #     grad_l_y = grad_l_y.mean()
+                    #     grad_l_y = grad_l_y*nrr*apply_gradient.item()
 
-                    # Flatten indices and gradients
-                    indices_flat = indices.flatten()
-                    grad_flat = grad_l_x.reshape(-1, grad_l_x.shape[2]) # (B*W, F)
+                    #     if save_gradients:
+                    #         y_gradient_list.append(grad_l_y)
+                    #     self._x_noisy.Y[n_window:n_window+grad_l_y.shape[0]] -= grad_l_y
 
-                    # Apply updates atomically
-                    np.add.at(self._x_noisy.X, indices_flat, -grad_flat)
-
-                    # Update progress bar by the actual number of items processed
-                    pbar1.update(current_batch_size)
+                    pbar1.update(1)
 
                 epoch += 1
         if epoch >= max_epochs:
-            print(f'Max epochs reached: {epoch}/{max_epochs}')
+            print(f'Max epochs reached: {epoch/max_epochs}')
         else:
             print('Noise threshold reached in all data points.')
 
@@ -521,7 +643,7 @@ class DLNoiseReduction():
         denoise_y: bool=True,
         path_to_save_imgs: str=None,
         save_gradients: bool=True
-    ) -> Tuple[np.ndarray, np.ndarray, list, list]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Decrease the noise level in the input data (x and y).
         If plot_progress is True, the process will take considerably more time.
@@ -573,7 +695,7 @@ class DLNoiseReduction():
         plot_progress: bool=False,
         path_to_save_imgs: str=None,
         save_gradients: bool=True
-    ) -> Tuple[np.ndarray, np.ndarray, list, list]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Fit the model to the input data and decrease the noise level in the input
         data (x and y). If plot_progress is True, the process will take
@@ -606,3 +728,36 @@ class DLNoiseReduction():
         )
 
         return x_denoised, y_denoised, x_gradient_list, y_gradient_list
+
+
+    def assert_improvement(self, x_denoised: np.ndarray, y_denoised: np.ndarray,
+                           x_orig: np.ndarray, y_orig: np.ndarray) -> bool:
+        """
+        Assert that the noise reduction process has improved the dataset based on
+        model performance.
+
+        Args:
+            x_denoised (np.ndarray): denoised X input data.
+            y_denoised (np.ndarray): denoised y input data.
+            x_orig (np.ndarray): original X input data, before adding noise.
+            y_orig (np.ndarray): original Y input data, before adding noise.
+
+        Returns:
+            bool: whether the data has improve or not.
+            
+        """
+
+        x_noisy_median_error = np.median(np.abs(self._x_noisy - x_orig))
+        x_denoised_median_error = np.median(np.abs(x_denoised - x_orig))
+        y_noisy_median_error = np.median(np.abs(self._y_noisy - y_orig))
+        y_denoised_median_error = np.median(np.abs(y_denoised - y_orig))
+
+        print(f'X noisy median error: {x_noisy_median_error}')
+        print(f'X denoised median error: {x_denoised_median_error}')
+        print(f'Y noisy median error: {y_noisy_median_error}')
+        print(f'Y denoised median error: {y_denoised_median_error}')
+
+        has_improved = x_denoised_median_error < x_noisy_median_error
+        has_improved = has_improved and (y_denoised_median_error < y_noisy_median_error)
+
+        return has_improved

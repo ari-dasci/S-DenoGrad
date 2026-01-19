@@ -29,7 +29,7 @@ from scipy.stats import entropy
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
-import TSFEDL.models_pytorch as tsfedl
+# import TSFEDL.models_pytorch as tsfedl
 
 # Seed
 random.seed(42)
@@ -48,6 +48,7 @@ OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'daily_climat
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
 sys.path.append(LIBS_PATH)
+sys.path.append(CURRENT_DIR)
 
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
@@ -159,9 +160,11 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     model_params = {
         'ridge': {"alpha": 1.0},
-        'pls': {"n_components": 1},
+        # 'pls': {"n_components": 1},
+        'pls': None,
         'tree': {"max_depth": 5},
-        'svm': {"kernel": 'poly', "degree": 2},
+        # 'svm': {"kernel": 'poly', "degree": 2},
+        'svm': None,
         'knn': {
             "n_neighbors": 5,
             "weights": 'uniform',
@@ -188,10 +191,11 @@ if __name__ == '__main__':
         #     'parallel': True
         # },
         # 'arima': None
-        'arima': {
-            'order': (7, 0, 0),
-            'seasonal_order': (0, 0, 1, 30)
-        }
+        # 'arima': {
+        #     'order': (7, 0, 0),
+        #     'seasonal_order': (0, 0, 1, 30)
+        # },
+        'arima': None
     }
     xai_benchmark_orig = XAI_benchmark(
         is_ts = IS_TS,
@@ -262,14 +266,14 @@ if __name__ == '__main__':
     input_size = X_train_nn.shape[1] # Número de variables de entrada
     hidden_size = 128  # Número de neuronas en la capa oculta
     output_size = 1  # Predicción de una variable
-    # model = LSTMModel(input_size, hidden_size, output_size).to(device)
+    model = LSTMModel(input_size, hidden_size, output_size).to(device)
     # top_module = nn.Sequential(
     # model = tsfedl.HuangMeiLing(
     #     in_features=input_size,
     #     top_module=top_module,
     #     loss=nn.MSELoss()
     # ).to(device)
-    model = FullyConvTemporalCNN(input_size, num_filters=32, kernel_size=3, output_size=1).to(device)
+    # model = FullyConvTemporalCNN(input_size, num_filters=32, kernel_size=3, output_size=1).to(device)
 
     # Set model parameters and create the model Trainer object
     lr = 0.001
@@ -352,7 +356,7 @@ if __name__ == '__main__':
     dlnr.fit(df_to_denoise)
 
     df_denoised = df_data.copy()
-    df_denoised[input_vars], old_y = dlnr.transform(
+    df_denoised[input_vars], old_y, x_grads, y_grads = dlnr.transform(
         nrr=0.05,
         nr_threshold=0.01,
         max_epochs=1000,

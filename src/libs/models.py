@@ -923,212 +923,212 @@ class Trainer:
 #         return {"optimizer": optimizers, "lr_scheduler": schedulers}
 
 
-# class XAI_benchmark:
-#     """
-#     Class to perform model training in the style of PyTorch Lightning.
-#     """
-#     def __init__(self, is_ts:bool = False, model_params:dict = None, verbose:bool = True) -> None:
-#         self.is_ts = is_ts
-#         self.verbose = verbose
+class XAI_benchmark:
+    """
+    Class to perform model training in the style of PyTorch Lightning.
+    """
+    def __init__(self, is_ts:bool = False, model_params:dict = None, verbose:bool = True) -> None:
+        self.is_ts = is_ts
+        self.verbose = verbose
 
-#         if model_params['ridge']:
-#             self.ridge = Ridge(**model_params['ridge'])
-#         else:
-#             self.ridge = None
-#         if model_params['pls']:
-#             self.pls = PLSRegression(**model_params['pls'])
-#         else:
-#             self.pls = None
-#         if model_params['tree']:
-#             self.decision_tree = DecisionTreeRegressor(**model_params['tree'])
-#         else:
-#             self.decision_tree = None
-#         if model_params['svm']:
-#             self.svr = SVR(**model_params['svm'])
-#         else:
-#             self.svr = None
-#         if model_params['knn']:
-#             self.knn = KNeighborsRegressor(**model_params['knn'])
-#         else:
-#             self.knn = None
-#         if self.is_ts:
-#             if model_params['auto_arima']:
-#                 raise ValueError('Auto-ARIMA model is no longer supported. Use ARIMA instead.')
-#                 # if self.verbose:
-#                 #     print('Fitting Auto-ARIMA model...')
-#                 # self.auto_arima = auto_arima(**model_params['auto_arima'])
-#                 # print(self.auto_arima.summary())
-#             else:
-#                 self.auto_arima = None
-#             if model_params['arima']:
-#                 self.arima = ARIMA(**model_params['arima'])
-#             else:
-#                 self.arima = None
-
-
-#     def fit(self, X:np.array, y:np.array) -> None:
-#         """
-#         Fit all XAI models
-
-#         Args:
-#             X (np.array): input training data.
-#             y (np.array): target training data.
-#         """
-#         if self.ridge:
-#             if self.verbose:
-#                 print('Fitting Ridge model...')
-#             self.ridge.fit(X, y)
-#         if self.pls:
-#             if self.verbose:
-#                 print('Fitting Partial Least Squares model...')
-#             self.pls.fit(X, y)
-#         if self.decision_tree:
-#             if self.verbose:
-#                 print('Fitting Decision Tree model...')
-#             self.decision_tree.fit(X, y)
-#         if self.svr:
-#             if self.verbose:
-#                 print('Fitting Support Vector Regressor model...')
-#             self.svr.fit(X, y)
-#         if self.knn:
-#             if self.verbose:
-#                 print('Fitting K-Nearest Neighbours model...')
-#             self.knn.fit(X, y)
-#         if self.is_ts:
-#             try:
-#                 y = y.values
-#             except:
-#                 pass
-
-#             if self.arima:
-#                 if self.verbose:
-#                     print(f'Fitting ARIMA model...')
-#                 self.arima.fit(y)
-
-#         if self.verbose:
-#             print('All models fitted!')
+        if model_params['ridge']:
+            self.ridge = Ridge(**model_params['ridge'])
+        else:
+            self.ridge = None
+        if model_params['pls']:
+            self.pls = PLSRegression(**model_params['pls'])
+        else:
+            self.pls = None
+        if model_params['tree']:
+            self.decision_tree = DecisionTreeRegressor(**model_params['tree'])
+        else:
+            self.decision_tree = None
+        if model_params['svm']:
+            self.svr = SVR(**model_params['svm'])
+        else:
+            self.svr = None
+        if model_params['knn']:
+            self.knn = KNeighborsRegressor(**model_params['knn'])
+        else:
+            self.knn = None
+        if self.is_ts:
+            if model_params['auto_arima']:
+                raise ValueError('Auto-ARIMA model is no longer supported. Use ARIMA instead.')
+                # if self.verbose:
+                #     print('Fitting Auto-ARIMA model...')
+                # self.auto_arima = auto_arima(**model_params['auto_arima'])
+                # print(self.auto_arima.summary())
+            else:
+                self.auto_arima = None
+            if model_params['arima']:
+                self.arima = ARIMA(**model_params['arima'])
+            else:
+                self.arima = None
 
 
-#     def predict(self, X:np.array, y_true:np.array = None, n_periods:int = None,
-#                 rolling_forcast:bool = False, get_metrics:bool = False) -> dict:
-#         """
-#         Predict with all XAI models.
+    def fit(self, X:np.array, y:np.array) -> None:
+        """
+        Fit all XAI models
 
-#         Args:
-#             X (np.array): input validation/test data.
+        Args:
+            X (np.array): input training data.
+            y (np.array): target training data.
+        """
+        if self.ridge:
+            if self.verbose:
+                print('Fitting Ridge model...')
+            self.ridge.fit(X, y)
+        if self.pls:
+            if self.verbose:
+                print('Fitting Partial Least Squares model...')
+            self.pls.fit(X, y)
+        if self.decision_tree:
+            if self.verbose:
+                print('Fitting Decision Tree model...')
+            self.decision_tree.fit(X, y)
+        if self.svr:
+            if self.verbose:
+                print('Fitting Support Vector Regressor model...')
+            self.svr.fit(X, y)
+        if self.knn:
+            if self.verbose:
+                print('Fitting K-Nearest Neighbours model...')
+            self.knn.fit(X, y)
+        if self.is_ts:
+            try:
+                y = y.values
+            except:
+                pass
 
-#         Returns:
-#             dictionary: dictionary with all the models predictions.
-#         """
-#         predictions = {
-#             'ridge': self.ridge.predict(X) if self.ridge else [],
-#             'pls': self.pls.predict(X) if self.pls else [],
-#             'decision_tree': self.decision_tree.predict(X) if self.decision_tree else [],
-#             'svm': self.svr.predict(X) if self.svr else [],
-#             'knn': self.knn.predict(X) if self.knn else [],
-#             'arima': [],
-#             'auto_arima': []
-#         }
+            if self.arima:
+                if self.verbose:
+                    print(f'Fitting ARIMA model...')
+                self.arima.fit(y)
 
-#         # If the data is a time series and n_periods has been specified for arima models
-#         if n_periods and self.is_ts:
-#             # If the prediction will be step by step
-#             if rolling_forcast:
-#                 i=0
-#                 while i < n_periods:
-#                     if self.arima:
-#                         new_pred = self.arima.predict(n_periods=1)
-#                         predictions['arima'].append(new_pred[0])
-#                         self.arima.update(new_pred)
-#                     elif self.auto_arima:
-#                         new_pred = self.auto_arima.predict(n_periods=1)
-#                         predictions['auto_arima'].append(new_pred[0])
-#                         self.auto_arima.update(new_pred)
-#                     i+=1
-#             # Or all at once
-#             else:
-#                 if self.arima:
-#                     predictions['arima'] = self.arima.predict(n_periods=n_periods)
-#                 elif self.auto_arima:
-#                     predictions['auto_arima'] = self.arima.predict(n_periods=n_periods)
-
-
-#         metrics = {}
-
-#         if get_metrics:
-#             assert y_true is not None, 'y must be provided to calculate metrics.'
-#             for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima', 'auto_arima']:
-#                 if list(predictions[model]):
-#                     metrics[model] = {
-#                         'mse': mean_squared_error(y_true, predictions[model]),
-#                         'rmse': np.sqrt(mean_squared_error(y_true, predictions[model])),
-#                         'mae': mean_absolute_error(y_true, predictions[model]),
-#                         'mape': mean_absolute_percentage_error(y_true, predictions[model]),
-#                         'R2': r2_score(y_true, predictions[model])
-#                     }
-#                 else:
-#                     metrics[model] = {
-#                         'mse': None,
-#                         'rmse': None,
-#                         'mae': None,
-#                         'mape': None,
-#                         'R2': None
-#                     }
-
-#         return predictions, metrics
+        if self.verbose:
+            print('All models fitted!')
 
 
-#     def save(self, path:str, subfix:str = ''):
-#         """
-#         Save the XAI models in pickle format.
+    def predict(self, X:np.array, y_true:np.array = None, n_periods:int = None,
+                rolling_forcast:bool = False, get_metrics:bool = False) -> dict:
+        """
+        Predict with all XAI models.
 
-#         Args:
-#             path (str): path to save the models.
-#             subfix (str): extra name for info.
-#         """
-#         make_dir(path)
-#         names = ['ridge', 'pls', 'decision_tree', 'svr', 'knn']
-#         models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn]
-#         for name, model in zip(names, models):
-#             file_name = f'{name}_{subfix}.pkl' if subfix else f'{name}.pkl'
-#             with open(os.path.join(path, file_name), 'wb') as f:
-#                 pickle.dump(model, f)
+        Args:
+            X (np.array): input validation/test data.
 
-#         file_name = f'arima_{subfix}.pkl' if subfix else 'arima.pkl'
-#         if self.is_ts:
-#             with open(os.path.join(path, file_name), 'wb') as f:
-#                 pickle.dump(self.arima, f)
+        Returns:
+            dictionary: dictionary with all the models predictions.
+        """
+        predictions = {
+            'ridge': self.ridge.predict(X) if self.ridge else [],
+            'pls': self.pls.predict(X) if self.pls else [],
+            'decision_tree': self.decision_tree.predict(X) if self.decision_tree else [],
+            'svm': self.svr.predict(X) if self.svr else [],
+            'knn': self.knn.predict(X) if self.knn else [],
+            'arima': [],
+            'auto_arima': []
+        }
+
+        # If the data is a time series and n_periods has been specified for arima models
+        if n_periods and self.is_ts:
+            # If the prediction will be step by step
+            if rolling_forcast:
+                i=0
+                while i < n_periods:
+                    if self.arima:
+                        new_pred = self.arima.predict(n_periods=1)
+                        predictions['arima'].append(new_pred[0])
+                        self.arima.update(new_pred)
+                    elif self.auto_arima:
+                        new_pred = self.auto_arima.predict(n_periods=1)
+                        predictions['auto_arima'].append(new_pred[0])
+                        self.auto_arima.update(new_pred)
+                    i+=1
+            # Or all at once
+            else:
+                if self.arima:
+                    predictions['arima'] = self.arima.predict(n_periods=n_periods)
+                elif self.auto_arima:
+                    predictions['auto_arima'] = self.arima.predict(n_periods=n_periods)
 
 
-#     def load(self, folder_path:str, must_have:str='', subfix:str=''):
-#         """
-#         Save the XAI models in pickle format.
+        metrics = {}
 
-#         Args:
-#             folder_path (str): path to saved models.
-#         """
-#         names = ['ridge', 'pls', 'decision', 'svr', 'knn', 'arima']
-#         models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn, self.arima]
-#         loaded_models = {}
+        if get_metrics:
+            assert y_true is not None, 'y must be provided to calculate metrics.'
+            for model in ['ridge', 'pls', 'decision_tree', 'svm', 'knn', 'arima', 'auto_arima']:
+                if list(predictions[model]):
+                    metrics[model] = {
+                        'mse': mean_squared_error(y_true, predictions[model]),
+                        'rmse': np.sqrt(mean_squared_error(y_true, predictions[model])),
+                        'mae': mean_absolute_error(y_true, predictions[model]),
+                        'mape': mean_absolute_percentage_error(y_true, predictions[model]),
+                        'R2': r2_score(y_true, predictions[model])
+                    }
+                else:
+                    metrics[model] = {
+                        'mse': None,
+                        'rmse': None,
+                        'mae': None,
+                        'mape': None,
+                        'R2': None
+                    }
 
-#         make_dir(folder_path)
+        return predictions, metrics
 
-#         for file_name in os.listdir(folder_path):
-#             full_path = os.path.join(folder_path, file_name)
-#             if os.path.isfile(full_path) and must_have in full_path and full_path.endswith(f'{subfix}.pkl'):
-#                 prefix = file_name.split('_')[0]
-#                 try:
-#                     i_list = names.index(prefix)
-#                     with open(full_path, 'rb') as f:
-#                         loaded_models[names[i_list]] = pickle.load(f)
-#                         print(f'Loaded {names[i_list]} model')
-#                 except Exception as e:
-#                     print(f'Error loading model {file_name}: {e}')
 
-#         # Update attributes in self
-#         self.ridge = loaded_models.get('ridge', self.ridge)
-#         self.pls = loaded_models.get('pls', self.pls)
-#         self.decision_tree = loaded_models.get('decision', self.decision_tree)
-#         self.svr = loaded_models.get('svr', self.svr)
-#         self.knn = loaded_models.get('knn', self.knn)
-#         self.arima = loaded_models.get('arima', self.arima)
+    def save(self, path:str, subfix:str = ''):
+        """
+        Save the XAI models in pickle format.
+
+        Args:
+            path (str): path to save the models.
+            subfix (str): extra name for info.
+        """
+        make_dir(path)
+        names = ['ridge', 'pls', 'decision_tree', 'svr', 'knn']
+        models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn]
+        for name, model in zip(names, models):
+            file_name = f'{name}_{subfix}.pkl' if subfix else f'{name}.pkl'
+            with open(os.path.join(path, file_name), 'wb') as f:
+                pickle.dump(model, f)
+
+        file_name = f'arima_{subfix}.pkl' if subfix else 'arima.pkl'
+        if self.is_ts:
+            with open(os.path.join(path, file_name), 'wb') as f:
+                pickle.dump(self.arima, f)
+
+
+    def load(self, folder_path:str, must_have:str='', subfix:str=''):
+        """
+        Save the XAI models in pickle format.
+
+        Args:
+            folder_path (str): path to saved models.
+        """
+        names = ['ridge', 'pls', 'decision', 'svr', 'knn', 'arima']
+        models = [self.ridge, self.pls, self.decision_tree, self.svr, self.knn, self.arima]
+        loaded_models = {}
+
+        make_dir(folder_path)
+
+        for file_name in os.listdir(folder_path):
+            full_path = os.path.join(folder_path, file_name)
+            if os.path.isfile(full_path) and must_have in full_path and full_path.endswith(f'{subfix}.pkl'):
+                prefix = file_name.split('_')[0]
+                try:
+                    i_list = names.index(prefix)
+                    with open(full_path, 'rb') as f:
+                        loaded_models[names[i_list]] = pickle.load(f)
+                        print(f'Loaded {names[i_list]} model')
+                except Exception as e:
+                    print(f'Error loading model {file_name}: {e}')
+
+        # Update attributes in self
+        self.ridge = loaded_models.get('ridge', self.ridge)
+        self.pls = loaded_models.get('pls', self.pls)
+        self.decision_tree = loaded_models.get('decision', self.decision_tree)
+        self.svr = loaded_models.get('svr', self.svr)
+        self.knn = loaded_models.get('knn', self.knn)
+        self.arima = loaded_models.get('arima', self.arima)

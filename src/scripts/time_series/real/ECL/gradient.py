@@ -29,7 +29,6 @@ from scipy.stats import entropy
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
-import TSFEDL.models_pytorch as tsfedl
 
 # Seed
 random.seed(42)
@@ -47,12 +46,13 @@ CHECKPOINT_PATH = os.path.join(CURRENT_DIR, 'checkpoints', 'time_series', 'real'
 OUT_PATH = os.path.join(CURRENT_DIR, 'out', 'time_series', 'real', 'ECL')
 CONFIG_PATH = os.path.join(CURRENT_DIR, 'config')
 assert os.path.exists(LIBS_PATH)
+sys.path.append(CURRENT_DIR)
 sys.path.append(LIBS_PATH)
 
 # Show info on the terminal about how the execution is going.
 VERBOSE = True
 # Even if there is a checkpoint, the model is retrained.
-FORCE_TRAINING_PRE_XAI = False
+FORCE_TRAINING_PRE_XAI = True
 FORCE_TRAINING_NN = True
 FORCE_TRAINING_POST_XAI = True
 # Name of this experiment that will appear in the result files.
@@ -61,6 +61,7 @@ IS_TS = True
 IS_CNN = True
 
 # Local libraries
+import TSFEDL.models_pytorch as tsfedl
 from dataset import SlidingWindowDataset
 from models import Trainer, XAI_benchmark, LSTMModel
 from dlnr import DLNoiseReduction
@@ -140,9 +141,9 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     model_params = {
         'ridge': {"alpha": 1.0},
-        'pls': {"n_components": 1},
+        'pls': None,# {"n_components": 1},
         'tree': {"max_depth": 5},
-        'svm': {"kernel": 'poly', "degree": 2},
+        'svm': None,# {"kernel": 'poly', "degree": 2},
         'knn': {
             "n_neighbors": 5,
             "weights": 'uniform',
@@ -168,11 +169,11 @@ if __name__ == '__main__':
         #     'trace': True,
         #     'parallel': True
         # },
-        # 'arima': None,
-        'arima': {
-            'order': (1, 1, 0),
-            'seasonal_order': (2, 0, 1, 24)
-        }
+        'arima': None,
+        # 'arima': {
+        #     'order': (1, 1, 0),
+        #     'seasonal_order': (2, 0, 1, 24)
+        # }
     }
     xai_benchmark_orig = XAI_benchmark(
         is_ts = IS_TS,
@@ -338,7 +339,7 @@ if __name__ == '__main__':
     df_denoised = df_data.copy()
     df_denoised[input_vars], old_y = dlnr.transform(
         nrr=0.05,
-        nr_threshold=0.01,
+        nr_threshold=0.02,
         max_epochs=1000,
         plot_progress=False,
         path_to_save_imgs=None,

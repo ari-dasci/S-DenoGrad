@@ -103,7 +103,8 @@ if __name__ == '__main__':
     df_data = pd.read_parquet(
         os.path.join(
             DATA_PATH,
-            '1000s_5v_24w.parquet'
+            '1000s_5v_24w',
+            'clean.parquet'
         )
     )
     scaler = MinMaxScaler()
@@ -126,9 +127,11 @@ if __name__ == '__main__':
     ## ------------------------------------------------------------------------------------------ ##
     model_params = {
         'ridge': {"alpha": 1.0},
-        'pls': {"n_components": 1},
+        # 'pls': {"n_components": 1},
+        'pls': None,
         'tree': {"max_depth": 5},
-        'svm': {"kernel": 'poly', "degree": 2},
+        # 'svm': {"kernel": 'poly', "degree": 2},
+        'svm': None,
         'knn': {
             "n_neighbors": 5,
             "weights": 'uniform',
@@ -137,10 +140,11 @@ if __name__ == '__main__':
             "p": 2,
             "n_jobs": None
         },
-        'arima': {
-            'order': (1, 1, 0),
-            'seasonal_order': (4, 0, 5, 12)
-        },
+        # 'arima': {
+        #     'order': (1, 1, 0),
+        #     'seasonal_order': (4, 0, 5, 12)
+        # },
+        'arima': None,
         'auto_arima': None
     }
     xai_benchmark_orig = XAI_benchmark(
@@ -184,7 +188,8 @@ if __name__ == '__main__':
 
     ## Add gaussian noise to the data in all variables ##
     ## ------------------------------------------------------------------------------------------ ##
-    for sigma in np.arange(0.01, 0.16, 0.01):
+    # for sigma in np.arange(0.01, 0.16, 0.01):
+    for sigma in [0.05]:
         sigma = round(sigma, 2)
 
         if VERBOSE:
@@ -193,7 +198,7 @@ if __name__ == '__main__':
 
         df_noisy = pd.DataFrame()
         df_noisy = add_gaussian_noise(
-            df=df_data.copy(),
+            data=df_data.copy(),
             columns=list(df_data.columns),
             mean=0.0,
             std=sigma
@@ -331,9 +336,9 @@ if __name__ == '__main__':
         # y_pred_test = model(
         #     torch.tensor(X_test_nn).float().to(device)
         # ).cpu().detach().numpy().reshape(-1)
-        
+
         predictions_test = trainer_basic.eval_dataloader(val_dataloader)
-        y_pred_test = np.array([y.cpu().detach().numpy() for x in predictions_test for y in x])
+        y_pred_test = np.array([y for x in predictions_test for y in x])
 
         # Show the metrics
         gt_values = y_test_nn[window_size:]
@@ -356,7 +361,7 @@ if __name__ == '__main__':
         metrics_dict[sigma][SUBFIX_NAME] = nn_metrics
 
         ## Perform gradient-based denoising method ##
-        ## ------------------------------------------------------------------------------------------ ##
+        ## -------------------------------------------------------------------------------------- ##
         x_sliding = df_noisy[input_vars].values
         y_sliding = df_noisy[['y']]
         df_to_denoise = SlidingWindowDataset(x_sliding, y_sliding, window_size=window_size, future=1)
@@ -365,10 +370,10 @@ if __name__ == '__main__':
         dlnr.fit(df_to_denoise)
 
         df_denoised = df_noisy.copy()
-        df_denoised[input_vars], old_y = dlnr.transform(
+        df_denoised[input_vars], old_y, x_gradients, y_gradients = dlnr.transform(
             nrr=0.05,
-            nr_threshold=0.01,
-            max_epochs=200,
+            nr_threshold=0.02,
+            max_epochs=1000,
             plot_progress=False,
             path_to_save_imgs=None,
             denoise_y=False
