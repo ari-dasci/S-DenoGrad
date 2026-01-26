@@ -297,7 +297,6 @@ class LSTMModel(nn.Module):
             dropout=dropout,
             bidirectional=bidirectional
         )
-        self.lstm.flatten_parameters()
 
         # Definir la capa de salida
         self.fc = nn.Linear(hidden_size * self.num_directions, output_size)
@@ -312,6 +311,9 @@ class LSTMModel(nn.Module):
         Returns:
             torch.tensor: Denoised data.
         """
+        # Flatten parameters for better memory layout
+        self.lstm.flatten_parameters()
+        
         # Estado oculto inicial
         h0 = torch.zeros(self.num_layers * self.num_directions, x.size(0), self.hidden_size).to(x.device)
         c0 = torch.zeros(self.num_layers * self.num_directions, x.size(0), self.hidden_size).to(x.device)
@@ -330,17 +332,14 @@ class ComplexLSTMModel(nn.Module):
 
         # Primera capa LSTM bidireccional
         self.lstm1 = nn.LSTM(input_size, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
-        self.lstm1.flatten_parameters()
         self.bn1 = nn.BatchNorm1d(hidden_size * 2)
 
         # Segunda capa LSTM bidireccional
         self.lstm2 = nn.LSTM(hidden_size * 2, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
-        self.lstm2.flatten_parameters()
         self.bn2 = nn.BatchNorm1d(hidden_size * 2)
 
         # Tercera capa LSTM bidireccional
         self.lstm3 = nn.LSTM(hidden_size * 2, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
-        self.lstm3.flatten_parameters()
         self.bn3 = nn.BatchNorm1d(hidden_size * 2)
 
         # Dropout
@@ -351,6 +350,11 @@ class ComplexLSTMModel(nn.Module):
 
     def forward(self, x):
         batch_size = x.size(0)
+        
+        # Flatten parameters for better memory layout
+        self.lstm1.flatten_parameters()
+        self.lstm2.flatten_parameters()
+        self.lstm3.flatten_parameters()
 
         # LSTM 1
         x, _ = self.lstm1(x)

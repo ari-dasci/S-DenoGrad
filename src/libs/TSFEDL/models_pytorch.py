@@ -203,10 +203,10 @@ class OhShuLih(TSFEDL_BaseModule):
         # we have to RESHAPE our BEFORE plugging them into the LSTM.
         self.lstm = nn.LSTM(input_size=6, hidden_size=20, batch_first=True) # TODO: línea original
         # self.lstm = nn.LSTM(input_size=6, hidden_size=128, batch_first=True)
-        self.lstm.flatten_parameters()
 
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         out = self.convolutions(x)
         # Now, flip indices using a view for the LSTM as it requires a shape of (N, L, H_in = C)
         out = out.view(out.size(0), out.size(2), out.size(1))
@@ -460,10 +460,10 @@ class YaoQihang(TSFEDL_BaseModule):
         # Temporal Layers (2 stacked LSTM): REMEMBER TO SWAP DIMENSIONS ON THE FORWARD METHOD.
         # input is 256 as we expect the last convolution with 256 filters.
         self.lstm = nn.LSTM(input_size=256, hidden_size=32, num_layers=2, dropout=0.2, batch_first=True)
-        self.lstm.flatten_parameters()
 
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm(x)  # We don't care about hidden state.
@@ -540,11 +540,12 @@ class HtetMyetLynn(TSFEDL_BaseModule):
                 self.rnn = nn.GRU(input_size=60, hidden_size=40, dropout=0.2, bidirectional=True, batch_first=True)
             else:
                 self.rnn = nn.LSTM(input_size=60, hidden_size=40, dropout=0.2, bidirectional=True, batch_first=True)
-            self.rnn.flatten_parameters()
         else:
             self.rnn = None
 
     def forward(self, x):
+        if self.rnn is not None:
+            self.rnn.flatten_parameters()
         x = self.convLayers(x)
 
         if self.rnn is not None:
@@ -644,9 +645,9 @@ class YildirimOzal(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(input_size=1, hidden_size=32, batch_first=True)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         reduction = self.encoder(x)
         if self.train_autoencoder:
             reconstruction = self.decoder(reduction)
@@ -895,9 +896,9 @@ class ZhangJin(TSFEDL_BaseModule):
         )
 
         self.gru = nn.GRU(input_size=256, hidden_size=12, batch_first=True, bidirectional=True, dropout=0.2)
-        self.gru.flatten_parameters()
 
     def forward(self, x):
+        self.gru.flatten_parameters()
         for i in range(5):
             x = self.convolutions[i](x)
             x_spatial = self.spatial_attention[i](x)
@@ -1003,9 +1004,9 @@ class KongZhengmin(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(batch_first=True, input_size=32, hidden_size=64, num_layers=2)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = self.convolution(x)
 
         x = flip_indices_for_conv_to_lstm(x)
@@ -1114,12 +1115,12 @@ class WeiXiaoyan(TSFEDL_BaseModule):
             nn.BatchNorm1d(num_features=512),
         )
         self.lstm1 = nn.LSTM(input_size=512, hidden_size=512, batch_first=True)
-        self.lstm1.flatten_parameters()
         self.batchNorm = nn.BatchNorm1d(num_features=512)
         self.lstm2 = nn.LSTM(input_size=512, hidden_size=512, batch_first=True)
-        self.lstm2.flatten_parameters()
 
     def forward(self, x):
+        self.lstm1.flatten_parameters()
+        self.lstm2.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm1(x)
@@ -1216,9 +1217,9 @@ class GaoJunLi(TSFEDL_BaseModule):
                  ):
         super(GaoJunLi, self).__init__(in_features, top_module, loss, optimizer, **kwargs)
         self.lstm = nn.LSTM(input_size=in_features, hidden_size=64, dropout=0.3)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm(x)
         if self.classifier is not None:
@@ -1328,9 +1329,9 @@ class LihOhShu(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(input_size=6, hidden_size=10, batch_first=True)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm(x)
@@ -1446,9 +1447,9 @@ class KhanZulfiqar(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(input_size=6, hidden_size=10, batch_first=True)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm(x)
@@ -1565,9 +1566,9 @@ class ZhengZhenyu(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(input_size=256, hidden_size=256, batch_first=True)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm(x)
@@ -1718,9 +1719,9 @@ class WangKejun(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(input_size=256, hidden_size=256, batch_first=True)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm(x)
@@ -1833,11 +1834,11 @@ class ChenChen(TSFEDL_BaseModule):
         )
 
         self.lstm1 = nn.LSTM(input_size=14, hidden_size=32, batch_first=True)
-        self.lstm1.flatten_parameters()
         self.lstm2 = nn.LSTM(input_size=32, hidden_size=64, batch_first=True)
-        self.lstm2.flatten_parameters()
 
     def forward(self, x):
+        self.lstm1.flatten_parameters()
+        self.lstm2.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm1(x)
@@ -1947,9 +1948,9 @@ class KimTaeYoung(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(input_size=64, hidden_size=64, batch_first=True)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm(x)
         x, _ = self.lstm(x)
@@ -2042,9 +2043,9 @@ class GenMinxing(TSFEDL_BaseModule):
         super(GenMinxing, self).__init__(in_features, top_module, loss, metrics, optimizer, **kwargs)
 
         self.lstm = nn.LSTM(input_size=in_features, hidden_size=40, batch_first=True, bidirectional=True)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x, _ = self.lstm(x)
 
         if self.classifier is not None:
@@ -2143,9 +2144,9 @@ class FuJiangmeng(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(input_size=32, hidden_size=256, batch_first=True, dropout=0.3)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm_reshape(x)
         x, _ = self.lstm(x)
@@ -2266,9 +2267,9 @@ class ShiHaotian(TSFEDL_BaseModule):
         )
 
         self.lstm = nn.LSTM(input_size=32*3, hidden_size=32, batch_first=True)
-        self.lstm.flatten_parameters()
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         x1 = self.convolutions1(x)
         x2 = self.convolutions1(x)
         x3 = self.convolutions1(x)
@@ -2476,14 +2477,14 @@ class HongTan(TSFEDL_BaseModule):
         self.convolutions = nn.Sequential(*conv_layers)
 
         self.lstm1 = nn.LSTM(input_size=32, hidden_size=32, batch_first=True)
-        self.lstm1.flatten_parameters()
         self.lstm2 = nn.LSTM(input_size=32, hidden_size=16, batch_first=True)
-        self.lstm2.flatten_parameters()
         self.lstm3 = nn.LSTM(input_size=16, hidden_size=4, batch_first=True)
-        self.lstm3.flatten_parameters()
 
 
     def forward(self, x):
+        self.lstm1.flatten_parameters()
+        self.lstm2.flatten_parameters()
+        self.lstm3.flatten_parameters()
         out = self.convolutions(x)
         # Now, flip indices using a view for the LSTM as it requires a shape of (N, L, H_in = C)
         out = out.view(out.size(0), out.size(2), out.size(1))
@@ -2586,9 +2587,7 @@ class SharPar(TSFEDL_BaseModule):
         )
 
         self.lstm1 = nn.LSTM(input_size=64, hidden_size=32, batch_first=True)
-        self.lstm1.flatten_parameters()
         self.lstm2 = nn.LSTM(input_size=32, hidden_size=16, batch_first=True)
-        self.lstm2.flatten_parameters()
 
         self.fcc_module = nn.Sequential(
             nn.Linear(16, 16),
@@ -2598,6 +2597,8 @@ class SharPar(TSFEDL_BaseModule):
         )
 
     def forward(self, x):
+        self.lstm1.flatten_parameters()
+        self.lstm2.flatten_parameters()
         x = self.convolutions(x)
         x = flip_indices_for_conv_to_lstm_reshape(x)
         x, _ = self.lstm1(x)

@@ -94,7 +94,6 @@ class WTHModel(nn.Module):
             bidirectional=True,
             dropout=0.2
         )
-        self.lstm.flatten_parameters()
         
         # Mecanismo de atención temporal
         self.attention = nn.Sequential(
@@ -109,6 +108,9 @@ class WTHModel(nn.Module):
         self.fc2 = nn.Linear(hidden_size, output_size)
         
     def forward(self, x):
+        # Flatten parameters for better memory layout
+        self.lstm.flatten_parameters()
+        
         # x shape: (batch, seq_len, features)
         batch_size, seq_len, features = x.size()
         
