@@ -297,6 +297,7 @@ class LSTMModel(nn.Module):
             dropout=dropout,
             bidirectional=bidirectional
         )
+        self.lstm.flatten_parameters()
 
         # Definir la capa de salida
         self.fc = nn.Linear(hidden_size * self.num_directions, output_size)
@@ -329,14 +330,17 @@ class ComplexLSTMModel(nn.Module):
 
         # Primera capa LSTM bidireccional
         self.lstm1 = nn.LSTM(input_size, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
+        self.lstm1.flatten_parameters()
         self.bn1 = nn.BatchNorm1d(hidden_size * 2)
 
         # Segunda capa LSTM bidireccional
         self.lstm2 = nn.LSTM(hidden_size * 2, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
+        self.lstm2.flatten_parameters()
         self.bn2 = nn.BatchNorm1d(hidden_size * 2)
 
         # Tercera capa LSTM bidireccional
         self.lstm3 = nn.LSTM(hidden_size * 2, hidden_size, num_layers=1, batch_first=True, bidirectional=True)
+        self.lstm3.flatten_parameters()
         self.bn3 = nn.BatchNorm1d(hidden_size * 2)
 
         # Dropout

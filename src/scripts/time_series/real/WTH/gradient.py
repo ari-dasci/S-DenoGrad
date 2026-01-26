@@ -92,6 +92,7 @@ class WTHModel(nn.Module):
             bidirectional=True,
             dropout=0.2
         )
+        self.lstm.flatten_parameters()
 
         # Mecanismo de atención temporal
         self.attention = nn.Sequential(
