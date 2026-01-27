@@ -2,6 +2,7 @@
 This module reduces the noise level of the input data of a Neural Network
 """
 from typing import Tuple, Union
+import copy
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -17,6 +18,18 @@ class DenoGrad():
     This class encapsulates the methods needed to perform the noise reduction
     algorithm on the data associated with your neural network model.
     """
+    class WrappedDataset(Dataset):
+         def __init__(self, X, Y):
+              self.X = X
+              self.Y = Y
+              self.shape = X.shape # Keep shape info accessible
+         
+         def __len__(self):
+              return len(self.X)
+              
+         def __getitem__(self, idx):
+              return self.X[idx], self.Y[idx]
+
     def __init__(
         self,
         model: nn.Module,
@@ -36,12 +49,12 @@ class DenoGrad():
             is_ts (bool): if the model is prepared to work with time series. Default False.
             is_cnn (bool): if the model is a CNN. Default False.
         """
-        self._model: nn.Module = model
         self._criterion: nn.modules.loss._Loss = criterion
         if device is None and torch.cuda.is_available():
             self._device: torch.device = torch.device('cuda')
         else:
             self._device: torch.device = torch.device('cpu')
+        self._model: nn.Module = model.to(self._device)
         self._x_noisy: np.ndarray = None
         self._y_noisy: np.ndarray = None
         self.is_ts: bool = is_ts
@@ -272,8 +285,8 @@ class DenoGrad():
         apply_gradient = [True, True]
         with tqdm(total=max_epochs) as pbar1:
             while epoch < max_epochs and np.array(apply_gradient).any() > 0:
-                x_tensor = torch.tensor(x_tensor, requires_grad=True)
-                y_tensor = torch.tensor(y_tensor, requires_grad=True)
+                x_tensor = torch.tensor(x_tensor, requires_grad=True).to(self._device)
+                y_tensor = torch.tensor(y_tensor, requires_grad=True).to(self._device)
 
                 # Calculate the gradients for X and Y performing a backpropagation step.
                 self._criterion.zero_grad()
@@ -380,7 +393,16 @@ class DenoGrad():
         """
         # Accelerate the runtime by finding the best cuda configuration
         torch.backends.cudnn.benchmark = True
-        self._model.train()
+        # Check if the model has any recurrent layers
+        is_recurrent = any(isinstance(m, (nn.RNN, nn.LSTM, nn.GRU)) for m in self._model.modules())
+        if is_recurrent:
+            print("Warning: The model contains recurrent layers. \
+Denoising with RNNs may be slow and less effective.")
+            self._model.train()
+        else:
+            self._model.eval()
+
+        initial_state_dict = copy.deepcopy(self._model.state_dict())
 
         x_gradient_list = []
         y_gradient_list = []
@@ -389,9 +411,10 @@ class DenoGrad():
         # For noise reduction on inputs, batch size mainly affects VRAM usage and speed,
         # not the optimization trajectory itself (unlike training weights).
         # We cap the batch size at the number of available windows.
-        batch_size = min(batch_size, len(self._x_noisy))
 
-        with tqdm(total=max_epochs*len(self._x_noisy)) as pbar1:
+        batch_size = min(batch_size, self._x_noisy.shape[0])
+
+        with tqdm(total=max_epochs) as pbar1:
             while epoch < max_epochs and more_gradients_to_apply:
                 more_gradients_to_apply = 0
 
@@ -459,9 +482,17 @@ class DenoGrad():
                     # Get the calculated gradients
                     grad_l_x = x_tensor.grad.detach().cpu().numpy()
 
-                    l2_grad = np.linalg.norm(grad_l_x)
-                    if not l2_grad:
-                        l2_grad += 1e-8  # Avoid division by zero
+                    # Normalize gradient per sample (window) instead of per batch
+                    # This ensures consistent updates regardless of batch size or other samples
+                    flat_grads = grad_l_x.reshape(grad_l_x.shape[0], -1)
+                    l2_grad = np.linalg.norm(flat_grads, axis=1)
+                    
+                    # Avoid division by zero
+                    l2_grad[l2_grad == 0] = 1e-8
+                    
+                    # Reshape for broadcasting: (B,) -> (B, 1, 1)
+                    l2_grad = l2_grad.reshape(-1, 1, 1)
+                    
                     grad_l_x /= l2_grad
 
                     if self.is_cnn:
@@ -475,64 +506,104 @@ class DenoGrad():
                     # Ensure nrr is applied
                     grad_l_x = grad_l_x * nrr * apply_gradient
 
-                    # Vectorized update of X using np.add.at
+                    # Correct update for 3D windowed tensor (Independent Windows)
+                    # grad_l_x: (Batch, Window, Feat)
+                    # self._x_noisy.X: (TotalWindows, Window, Feat)
+                    
+                    # Re-calculate start_indices for batch
                     current_batch_size = grad_l_x.shape[0]
-                    window_size_dim = grad_l_x.shape[1]
-
-                    # Construct indices
-                    # Start index for each batch item
                     start_indices = np.arange(current_batch_size) + i_loader * batch_size
-                    # Offsets for the window
-                    offsets = np.arange(window_size_dim)
-                    # Create 2D indices (B, W)
-                    indices = start_indices[:, None] + offsets[None, :]
 
-                    # Flatten indices and gradients
-                    indices_flat = indices.flatten()
-                    grad_flat = grad_l_x.reshape(-1, grad_l_x.shape[2]) # (B*W, F)
-
-                    # Apply updates atomically
-                    np.add.at(self._x_noisy.X, indices_flat, -grad_flat)
+                    # Ensure apply_gradient matches broadcastable shape
+                    # grad_l_x is (B, W, F). apply_gradient (after unsqueeze loop) is (B, 1, 1).
+                    
+                    # Calculate adjustment
+                    adjustment = grad_l_x * nrr * apply_gradient
+                    
+                    # Vectorized in-place update
+                    # start_indices corresponds to the index of the window in the full dataset
+                    self._x_noisy.X[start_indices] -= adjustment
 
                     if save_gradients:
                         x_gradient_list.append(grad_l_x)
 
-                    # Update progress bar by the actual number of items processed
-                    pbar1.update(current_batch_size)
-
                 epoch += 1
+                pbar1.update(1)
         if epoch >= max_epochs:
             print(f'Max epochs reached: {epoch}/{max_epochs}')
         else:
             print('Noise threshold reached in all data points.')
+
+        weights_changed = False
+        current_state_dict = self._model.state_dict()
+        for key in initial_state_dict:
+            if not torch.equal(initial_state_dict[key], current_state_dict[key]):
+                weights_changed = True
+                break
+        
+        if weights_changed:
+            print("WARNING: Model weights CHANGED during denoising!")
+        else:
+            print("SUCCESS: Model weights remained UNCHANGED during denoising.")
 
         return self._x_noisy.X, self._x_noisy.Y, x_gradient_list, y_gradient_list
 
 
     # Public methods
     # --------------------------------------------------------------------------
-    def fit(self, x: Union[np.ndarray, Dataset], y: np.ndarray = None) -> 'DenoGrad':
+    def fit(self, x: Union[np.ndarray, Dataset, torch.Tensor], y: Union[np.ndarray, torch.Tensor] = None) -> 'DenoGrad':
         """
         Fit the model to the input data.
 
         Args:
-            x (np.ndarray): array-like of shape (n_samples, n_features).
+            x (Union[np.ndarray, Dataset, pd.DataFrame, pd.Series, torch.Tensor]): 
                 The training input samples.
-            y (np.ndarray): array-like of shape (n_samples, n_targets).
+            y (Union[np.ndarray, pd.DataFrame, pd.Series, torch.Tensor]): 
                 The target values (real numbers).
         
         Returns:
             self: returns an instance of self.
         """
-        if y is not None:
-            assert not self.is_ts, "Model expected time series data (is_ts=True) but 'y' \
-                WAS provided."
-            self._y_noisy = y.copy()
-            self._x_noisy = x.copy()
+        # Helper function to convert versatile inputs to numpy or Dataset
+        def convert_input(data):
+            
+            if data is None:
+                return None
+            
+            # Helper: Check Tensor first to avoid false positives with .values on some PyTorch versions/types
+            if isinstance(data, torch.Tensor):
+                return np.array(data.detach().cpu())
+            
+            if hasattr(data, 'values'): # Pandas DataFrame or Series
+                return data.values
+                
+            if isinstance(data, (np.ndarray, Dataset)):
+                return data
+            
+            # Fallback debug
+            print(f"DEBUG: Unsupported type in convert_input: {type(data)}")
+            raise TypeError(f"Unsupported type {type(data)}")
+
+        x_converted = convert_input(x)
+        y_converted = convert_input(y)
+
+        if y_converted is not None:
+             # Standard case: X and y provided separately
+            self._y_noisy = y = y_converted.copy() if isinstance(y_converted, np.ndarray) else y_converted
+            self._x_noisy = x_converted.copy() if isinstance(x_converted, np.ndarray) else x_converted
+            
+            # If TS, wrap them in a Dataset that yields (x, y) so DataLoader works as expected in _transform_time_series
+            if self.is_ts and isinstance(self._x_noisy, np.ndarray) and isinstance(self._y_noisy, np.ndarray):
+                 self._x_noisy = self.WrappedDataset(self._x_noisy, self._y_noisy)
+
         else:
             assert self.is_ts, "Model expected static tabular data (is_ts=False) but 'y' \
                 was NOT provided."
-            self._x_noisy = x.copy()
+            # For Time Series (often Dataset objects), we usually assign directly or copy if numpy
+            if hasattr(x_converted, 'copy') and not isinstance(x_converted, Dataset):
+                 self._x_noisy = x_converted.copy()
+            else:
+                 self._x_noisy = x_converted
 
         return self
 
