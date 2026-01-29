@@ -26,28 +26,40 @@ pip install denograd
 ## 📖 Basic Usage
 
 ```python
+import torch
+import torch.nn as nn
 from denograd import DenoGrad
 
 # Initialize the denoiser with your reference model
 denoiser = DenoGrad(
     model=my_deep_model, # DL model fitted to noisy data
-    criterion=nn.MSE(),
-    is_ts=False, # Is it a time series problem?
-    is_cnn=False # Has the DL model a CNN layer at the beginning?
+    criterion=nn.MSELoss(),
 )
 
-# Fit the noisy data
-denoiser.fit(x_noisy, y_noisy)
+# 1. Fit the noisy data
+# For Tabular Data
+denoiser.fit(
+    X=x_noisy, 
+    y=y_noisy, 
+    is_ts=False
+)
 
-# Denoise the dataset
-x_clean, y_clean, x_gradients, y_gradients = transform(
+# For Time Series (requires window_size)
+# denoiser.fit(
+#    X=x_noisy,
+#    y=y_noisy,
+#    is_ts=True,
+#    window_size=24,
+#    stride=1
+# )
+
+# 2. Denoise the dataset
+x_clean, y_clean, x_gradients, y_gradients = denoiser.transform(
     nrr = 0.05, # Noise Reduction Rate. Same functionality as learning rate but for denoising porposes.
     nr_threshold = 0.01, # "Level" of noise allowed.
     max_epochs = 200, # Max number of epochs to perform the denoising process.
-    plot_progress = False, # 2D and 3D data exclusive.
-    path_to_save_imgs = '', # Path where to save the imgs generated for 2D or 3D data.
-    denoise_y = True, # It is recommended to set to False for time series (TS) problems.
-    batch_size = 1024, # Only used in TS problems.
+    denoise_y = True, # Enable denoising for the target variable (recommended for Tabular).
+    batch_size = 1024,
     save_gradients = True # Save all the gradients calculated through the denoising process.
 )
 ```
