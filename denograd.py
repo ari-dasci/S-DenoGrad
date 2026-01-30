@@ -406,15 +406,29 @@ class DenoGrad():
 
                             # Accumulate Y (if applicable)
                             if denoise_y and adjustment_y is not None:
-                                if len(self._dataset.Y) == len(self._dataset.X):
+                                # Determine update mode: Sequence (Window) vs Point
+                                # If adjustment_y[i] has same first dim as window_size, assume sequence
+                                is_seq_y = False
+                                if adjustment_y[i].ndim > 0 and adjustment_y[i].shape[0] == self._dataset.window_size:
+                                    is_seq_y = True
+                                
+                                if is_seq_y and len(self._dataset.Y) == len(self._dataset.X):
+                                    # TODO: Quitar print. Creo que y nunca es secuencia en TS.
+                                    print(" » QUE ENTRE AQUÍ CREO QUE ES UN ERROR.")
                                     # Y is a sequence aligned with X
                                     grad_accum_y[start_idx:end_idx] += adjustment_y[i]
                                     count_accum_y[start_idx:end_idx] += 1.0
                                 else:
                                     # Y is a single target per window
-                                    target_idx = indices_np[i]
-                                    grad_accum_y[target_idx] += adjustment_y[i]
-                                    count_accum_y[target_idx] += 1.0
+                                    target_idx = indices_np[i] # Default fallback
+                                    
+                                    # Use precise logic if Dataset supports it
+                                    if hasattr(self._dataset, 'future'):
+                                         target_idx = start_idx + self._dataset.window_size + self._dataset.future - 1
+                                    
+                                    if 0 <= target_idx < len(grad_accum_y):
+                                        grad_accum_y[target_idx] += adjustment_y[i]
+                                        count_accum_y[target_idx] += 1.0
                     else:
                         # For Tabular: Direct Accumulation
                         # Note: In tabular, count is usually 1 unless batches repeat indices?
