@@ -36,15 +36,23 @@ class DenoGrad():
             return idx, self.X[idx], self.Y[idx]
 
     class _SlidingWindowDataset(_DenoGradDataset):
-        def __init__(self, X: np.ndarray, Y: np.ndarray, window_size: int, stride: int = 1,
-                     flattening: bool = False):
+        def __init__(self, X: np.ndarray, Y: np.ndarray, window_size: int, future: int = 1,
+                     stride: int = 1, flattening: bool = False):
             super().__init__(X, Y)
             self.window_size = window_size
+            self.future = future
             self.stride = stride
             self.flattening = flattening
 
             # Calculate number of windows
-            self.n_windows = (len(X) - window_size) // stride + 1
+            # The last window must allow for 'future' steps ahead in Y
+            # Last target index = start_idx + window_size + future - 1
+            # Must be < len(Y)
+            limit = len(Y) - window_size - future + 1
+            if limit <= 0:
+                self.n_windows = 0
+            else:
+                self.n_windows = (limit - 1) // stride + 1
 
         def __len__(self):
             return self.n_windows
@@ -56,21 +64,15 @@ class DenoGrad():
 
             x_window = self.X[start_idx:end_idx]
 
-            # Target can be the value after the window or corresponding to window
-            # For this unexpected case, we assume Y is aligned with X if it is a sequence
-            # or Y is a target vector corresponding to the window end.
-            # Simplified: Return Y corresponding to the end of the window (standard forecasting)
-            # OR if Y has same length as X, return window of Y?
-            # Let's assume standard "many-to-one" forecasting where Y is aligned with X's timestamps
-            # If Y is (N,), then y[end_idx-1] is the target at last step.
-            # For flexibility, let's return the target corresponding to the window's last step
-            # unless Y is shorter (pre-processed).
-
-            # CRITICAL FIX for compatibility:
-            # If Y is supplied as full length, we take the target at the end horizon.
-            # But users might provide Y already windowed? No, fit() manages raw data now.
-
-            val_y = self.Y[start_idx:end_idx] if len(self.Y) == len(self.X) else self.Y[idx]
+            # Target is future steps ahead
+            # If future=1, it is the immediate next value (index = end_idx)
+            # General: end_idx + future - 1
+            # (since end_idx is exclusive bound of window, it points to next element)
+            # Correction: end_idx points to the element at t+1 if window is 0..t
+            # Wait, slice 0:3 is indices 0,1,2. end_idx=3.
+            # Next element is index 3.
+            # So if future=1, index=3. => end_idx + 1 - 1 = end_idx. Correct.
+            val_y = self.Y[end_idx + self.future - 1]
 
             if self.flattening:
                 x_window = x_window.reshape(-1)
@@ -467,6 +469,7 @@ class DenoGrad():
         y: Union[np.ndarray, torch.Tensor, list, str] = None,
         is_ts: bool = False,
         window_size: int = None,
+        future: int = 1,
         stride: int = 1,
         flattening: bool = False
     ) -> 'DenoGrad':
@@ -475,11 +478,12 @@ class DenoGrad():
 
         Args:
             X: Input data. Can be numpy array, torch Tensor, or pandas DataFrame (if hasattr values)
-            y: Target data. 
+            y: Target data or Column specification. 
                - If X is DataFrame and y is list/str, these are column names in X to treat as target
                - Otherwise, array/tensor of targets.
             is_ts (bool): Whether data is Time Series.
             window_size (int): Size of sliding window (Required if is_ts=True).
+            future (int): Steps ahead to predict (Required if is_ts=True). Default 1.
             stride (int): Stride for sliding window.
             flattening (bool): Whether to flatten windows (e.g. for MLP on TS data).
             is_cnn (bool): Whether model requires (B, C, L) format (often for 1D CNNs).
@@ -513,9 +517,15 @@ class DenoGrad():
         if Y_np is None:
             raise ValueError("Target 'y' must be provided.")
 
+        # Check matching lengths
+        # In tabular, X and Y must have same number of samples
+        # In TS, we assume Y is aligned with X (same temporal stamp) we'll apply future logic later
+        assert len(X_np) == len(Y_np), "X and y must have the same number of samples."
+
         # Store backups (references)
-        self._x_storage = X_np # We will modify this array in-place!
-        self._y_storage = Y_np
+        # We will modify these arrays in-place!
+        self._x_storage = X_np
+        self._y_storage = Y_np 
 
         # 2. Dataset Strategy
         if is_ts:
@@ -524,6 +534,7 @@ class DenoGrad():
             self._dataset = self._SlidingWindowDataset(
                 self._x_storage, self._y_storage,
                 window_size=window_size,
+                future=future,
                 stride=stride,
                 flattening=flattening
             )
