@@ -47,9 +47,10 @@ denoiser.fit(
 # For Time Series (requires window_size)
 # denoiser.fit(
 #    X=x_noisy,
-#    y=y_noisy,
+#    y=['y'],
 #    is_ts=True,
 #    window_size=24,
+#    future=1,
 #    stride=1
 # )
 
