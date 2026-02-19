@@ -69,10 +69,4 @@ x_clean, y_clean, x_gradients, y_gradients = denoiser.transform(
 
 If you use DenoGrad in your research, please cite our paper:
 
-
-> @article{denograd2025,
-  title={DenoGrad: Deep Gradient Denoising Framework for Enhancing the Performance of Interpretable AI Models},
-  author={Alonso-Ramos, J. Javier and [Other Authors]},
-  journal={arXiv preprint arXiv:2511.10161},
-  year={2025}
-}
+ON REVISION
