@@ -1,6 +1,5 @@
 # DenoGrad: Deep Gradient Denoising Framework
 
-[![arXiv](https://img.shields.io/badge/arXiv-2511.10161-b31b1b.svg)](https://arxiv.org/abs/2511.10161)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
