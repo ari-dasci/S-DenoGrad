@@ -69,12 +69,12 @@ criterion = nn.MSELoss()
 denoiser = DenoGrad(model=model, criterion=criterion, device=torch.device('cuda'))
 
 # 3. Fit and Transform
-# nrr: Noise Reduction Rate (learning rate for the input)
+# nrr: Noise Reduction Rate (fraction of the gap to the model closed per epoch)
 # nr_threshold: Gating mechanism (don't correct if error < threshold)
 X_clean, y_clean, grad_x, grad_y = denoiser.fit_transform(
     X=X_noisy, 
     y=y_noisy,
-    nrr=0.05,           
+    nrr=0.5,            
     nr_threshold=0.01,  
     max_epochs=100
 )
@@ -99,7 +99,7 @@ X_clean, y_clean, _, _ = denoiser.fit_transform(
     window_size=24,      # Size of the look-back window used by the model
     stride=1,
     future=1,            # Steps ahead the model predicts
-    nrr=0.01,
+    nrr=0.5,
     max_epochs=50
 )
 
@@ -111,7 +111,14 @@ X_clean, y_clean, _, _ = denoiser.fit_transform(
 
 Traditional training updates weights ($\theta$) to minimize loss. DenoGrad inverts this process: it freezes $\theta$ and updates the input ($x$).
 
-$$x_{new} \leftarrow x - \eta \cdot \nabla_x \mathcal{L}(f_\theta(x), y)$$
+$$x_{new} \leftarrow x - \eta \cdot \frac{|r|}{\lVert g \rVert} \cdot \frac{\nabla \mathcal{L}}{\lVert \nabla \mathcal{L} \rVert}$$
+
+The gradient supplies the *direction*, while the step *length* is set by how far the sample sits
+from the surface where the model is self-consistent, $\{f_\theta(x) = y\}$. With
+$r = f_\theta(x) - y$ the residual and $g = (\partial f_\theta/\partial x, -1)$, that distance is
+$|r| / \lVert g \rVert$. A point far from what the network models is corrected hard; one that
+already sits close is barely touched. Because $\lVert \nabla \mathcal{L} \rVert \ge \lVert \nabla_y \mathcal{L} \rVert$,
+the step can never exceed the residual itself, so no sample can overshoot.
 
 1. **Input Optimization:** The framework calculates the gradient of the loss with respect to the input features and targets.
 
@@ -145,7 +152,7 @@ Configures the dataset strategy and executes the denoising loop.
 **General Parameters:**
 
 * `X`, `y`: Input data (Numpy array, Torch Tensor, or Pandas DataFrame).
-* `nrr` (float, default=0.05): **Noise Reduction Rate**. Controls the step size of the correction ($\eta$).
+* `nrr` (float, default=0.5): **Noise Reduction Rate**. The fraction of the distance to the model's consistency surface that a sample closes per epoch. It is dimensionless: `nrr=1.0` lands on the surface in a single step, and values between 0.3 and 0.9 converge in a handful of epochs.
 
 
 * `nr_threshold` (float, default=0.01): **Noise Tolerance**. Corrections are zeroed out if $|y_{pred} - y_{true}| \le \tau$.

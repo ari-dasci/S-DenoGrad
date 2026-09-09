@@ -112,8 +112,12 @@ class DenoGrad():
         self._is_ts: bool = False
         self._is_cnn: bool = False
 
-        first_module = next(self._model.modules())
-        if isinstance(first_module, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
+        # First *leaf* layer: model.modules() yields the container itself first,
+        # so we skip anything that still has children.
+        first_layer = next(
+            (m for m in self._model.modules() if not list(m.children())), None
+        )
+        if isinstance(first_layer, (nn.Conv1d, nn.Conv2d, nn.Conv3d)):
             self._is_cnn = True
 
         # Exposed for plotting/debugging but managed via dataset now
@@ -170,7 +174,7 @@ class DenoGrad():
         Returns:
             np.ndarray: original X input data.
         """
-        return self._x_noisy
+        return self._x_storage
 
 
     @property
@@ -181,7 +185,7 @@ class DenoGrad():
         Returns:
             np.ndarray: original y input data.
         """
-        return self._y_noisy
+        return self._y_storage
 
 
     # Setters
@@ -227,7 +231,7 @@ class DenoGrad():
         Args:
             x_noisy (np.ndarray): original X input data.
         """
-        self._x_noisy = x_noisy
+        self._x_storage = x_noisy
 
 
     @y_original.setter
@@ -238,14 +242,14 @@ class DenoGrad():
         Args:
             y_original (np.ndarray): original y input data.
         """
-        self._y_noisy = y_original
+        self._y_storage = y_original
 
 
     # Private methods
     # --------------------------------------------------------------------------
     def _transform(
         self,
-        nrr: float=0.05,
+        nrr: float=0.5,
         nr_threshold: float=0.01,
         max_epochs: int=100,
         batch_size: int=1000,
@@ -299,7 +303,7 @@ class DenoGrad():
                     x_tensor.requires_grad_(True)
                     y_tensor.requires_grad_(True)
 
-                    self._criterion.zero_grad()
+                    self._model.zero_grad(set_to_none=True)
 
                     # 1. Forward
                     # Handle CNN Dimension Permutation (B, L, C) -> (B, C, L) if needed
@@ -331,21 +335,36 @@ class DenoGrad():
                             y_true_np = y_true_np.reshape(y_pred_np.shape)
 
                     diff = np.abs(y_pred_np - y_true_np)
-                    mask_apply = (diff > nr_threshold).astype(np.float32)
+                    # Per-SAMPLE mask: the joint normalization below works on a
+                    # whole sample at a time, so the decision to correct one must
+                    # be too. With multi-output targets an element-wise mask has
+                    # shape (B, n_targets) and cannot broadcast against grad_x.
+                    if diff.ndim > 1:
+                        sample_hit = (diff > nr_threshold).any(
+                            axis=tuple(range(1, diff.ndim))
+                        )
+                    else:
+                        sample_hit = diff > nr_threshold
+                    mask_apply = sample_hit.astype(np.float32)
                     more_gradients += mask_apply.sum()
 
                     # Fix broadcasting for mask: (B, ...) -> match grad shape
                     # x_tensor.grad is (B, Window, Feat) or (B, Feat)
-                    grad_x = x_tensor.grad.detach().cpu().numpy()
+                    grad_x = x_tensor.grad.detach().cpu().numpy().copy()
 
                     # Check if Y gradients are available for joint normalization
                     # They might not be if Y is discrete (LongTensor) or requires_grad failed
                     grad_y = None
                     try:
                         if y_tensor.grad is not None:
-                            grad_y = y_tensor.grad.detach().cpu().numpy()
+                            grad_y = y_tensor.grad.detach().cpu().numpy().copy()
                     except RuntimeError:
                         pass # grad_y remains None
+
+                    # Per-sample residual norm, used as the Gauss-Newton step length
+                    resid_norm = np.linalg.norm(
+                        diff.reshape(diff.shape[0], -1), axis=1, keepdims=True
+                    )
 
                     # JOINT NORMALIZATION Logic (Always preferred if grad_y exists)
                     if grad_y is not None:
@@ -359,6 +378,10 @@ class DenoGrad():
                         l2_norms = np.linalg.norm(flat_all, axis=1, keepdims=True)
                         l2_norms[l2_norms == 0] = 1e-8
 
+                        # Norm of the Y block BEFORE the shared division: needed to
+                        # recover the sensitivity scale for the Gauss-Newton step.
+                        y_grad_norms = np.linalg.norm(flat_y, axis=1, keepdims=True)
+
                         # Apply shared norm
                         flat_x /= l2_norms
                         flat_y /= l2_norms
@@ -366,6 +389,20 @@ class DenoGrad():
                         # Reshape back to original dimensions
                         grad_x = flat_x.reshape(grad_x.shape)
                         grad_y = flat_y.reshape(grad_y.shape)
+
+                        # Gauss-Newton step length: the distance from the sample
+                        # to the consistency surface {out(x) = y}, measured along
+                        # the (unit) gradient direction:
+                        #     dist = |r| / ||g||,   g = (dout/dx, -1)
+                        # For any loss that is a function of the residual,
+                        # grad = k * g and grad_y = k * (-1), so
+                        #     ||g|| = ||grad|| / ||grad_y||
+                        # and the loss constant k cancels out entirely: this needs
+                        # no knowledge of the criterion, its reduction, or N.
+                        # Since ||grad|| >= ||grad_y||, dist <= |r|, so a sample
+                        # can never travel further than its own residual.
+                        step_len = (nrr * resid_norm * y_grad_norms
+                                    / l2_norms).ravel()
                     else:
                         # Fallback: INDEPENDENT Normalization (Only X)
                         # Occurs if Y is discrete or frozen without grads
@@ -374,23 +411,32 @@ class DenoGrad():
                         l2_norms_x[l2_norms_x == 0] = 1e-8
                         flat_grads_x /= l2_norms_x
                         grad_x = flat_grads_x.reshape(grad_x.shape)
+                        # Without grad_y the sensitivity scale cannot be recovered,
+                        # so this path keeps the fixed-length step.
+                        step_len = np.full(grad_x.shape[0], nrr, dtype=np.float32)
 
                     # Prepare adjustments
 
                     # 1. Adjustment for X (Always applied)
-                    # Expand mask to match grad_x dimensions
+                    # mask_apply_x stays a plain 0/1 indicator: it doubles as the
+                    # consensus counter below, so the step length must not leak
+                    # into it.
                     mask_apply_x = mask_apply.copy()
+                    step_x = step_len.copy()
                     while mask_apply_x.ndim < grad_x.ndim:
                         mask_apply_x = np.expand_dims(mask_apply_x, axis=-1)
-                    adjustment_x = grad_x * nrr * mask_apply_x
+                        step_x = np.expand_dims(step_x, axis=-1)
+                    adjustment_x = grad_x * step_x * mask_apply_x
 
                     # 2. Adjustment for Y (Only if requested and available)
                     adjustment_y = None
                     if denoise_y and grad_y is not None:
                         mask_apply_y = mask_apply.copy()
+                        step_y = step_len.copy()
                         while mask_apply_y.ndim < grad_y.ndim:
                             mask_apply_y = np.expand_dims(mask_apply_y, axis=-1)
-                        adjustment_y = grad_y * nrr * mask_apply_y
+                            step_y = np.expand_dims(step_y, axis=-1)
+                        adjustment_y = grad_y * step_y * mask_apply_y
 
                     # 4. Accumulate Updates (Do NOT apply in-place yet)
                     indices_np = indices.numpy()
@@ -400,45 +446,35 @@ class DenoGrad():
                         for i, start_idx in enumerate(indices_np):
                             end_idx = start_idx + self._dataset.window_size
 
-                            # Accumulate X
-                            grad_accum_x[start_idx:end_idx] += adjustment_x[i]
-                            count_accum_x[start_idx:end_idx] += 1.0
+                            # Accumulate X. With flattening=True the gradient
+                            # comes back as (window_size * n_features,), so it
+                            # has to be folded back into the buffer's layout.
+                            adj_i = adjustment_x[i]
+                            slot_shape = grad_accum_x[start_idx:end_idx].shape
+                            if adj_i.shape != slot_shape:
+                                adj_i = adj_i.reshape(slot_shape)
+                            grad_accum_x[start_idx:end_idx] += adj_i
+                            count_accum_x[start_idx:end_idx] += mask_apply_x[i]
 
                             # Accumulate Y (if applicable)
                             if denoise_y and adjustment_y is not None:
-                                # Determine update mode: Sequence (Window) vs Point
-                                # If adjustment_y[i] has same first dim as window_size, assume sequence
-                                is_seq_y = False
-                                if adjustment_y[i].ndim > 0 and adjustment_y[i].shape[0] == self._dataset.window_size:
-                                    is_seq_y = True
-                                
-                                if is_seq_y and len(self._dataset.Y) == len(self._dataset.X):
-                                    # TODO: Quitar print. Creo que y nunca es secuencia en TS.
-                                    print(" » QUE ENTRE AQUÍ CREO QUE ES UN ERROR.")
-                                    # Y is a sequence aligned with X
-                                    grad_accum_y[start_idx:end_idx] += adjustment_y[i]
-                                    count_accum_y[start_idx:end_idx] += 1.0
-                                else:
-                                    # Y is a single target per window
-                                    target_idx = indices_np[i] # Default fallback
-                                    
-                                    # Use precise logic if Dataset supports it
-                                    if hasattr(self._dataset, 'future'):
-                                         target_idx = start_idx + self._dataset.window_size + self._dataset.future - 1
-                                    
-                                    if 0 <= target_idx < len(grad_accum_y):
-                                        grad_accum_y[target_idx] += adjustment_y[i]
-                                        count_accum_y[target_idx] += 1.0
+                                # _SlidingWindowDataset always yields a single Y
+                                # target per window, never a sequence.
+                                target_idx = (start_idx + self._dataset.window_size
+                                              + self._dataset.future - 1)
+                                if 0 <= target_idx < len(grad_accum_y):
+                                    grad_accum_y[target_idx] += adjustment_y[i]
+                                    count_accum_y[target_idx] += mask_apply_y[i]
                     else:
                         # For Tabular: Direct Accumulation
                         # Note: In tabular, count is usually 1 unless batches repeat indices?
                         # Dataset doesn't repeat, but good to be generic.
                         grad_accum_x[indices_np] += adjustment_x
-                        count_accum_x[indices_np] += 1.0
+                        count_accum_x[indices_np] += mask_apply_x
 
                         if denoise_y and adjustment_y is not None:
                             grad_accum_y[indices_np] += adjustment_y
-                            count_accum_y[indices_np] += 1.0
+                            count_accum_y[indices_np] += mask_apply_y
 
                     if save_gradients:
                         x_gradient_list.append(grad_x)
@@ -536,10 +572,11 @@ class DenoGrad():
         # In TS, we assume Y is aligned with X (same temporal stamp) we'll apply future logic later
         assert len(X_np) == len(Y_np), "X and y must have the same number of samples."
 
-        # Store backups (references)
-        # We will modify these arrays in-place!
-        self._x_storage = X_np
-        self._y_storage = Y_np 
+        # Work on our own float copies: the denoising loop mutates these
+        # buffers in place, and X_np/Y_np may be the caller's own arrays
+        # (or of an integer dtype that cannot absorb a float update).
+        self._x_storage = np.array(X_np, dtype=np.float32)
+        self._y_storage = np.array(Y_np, dtype=np.float32)
 
         # 2. Dataset Strategy
         if is_ts:
@@ -562,7 +599,7 @@ class DenoGrad():
 
     def transform(
         self,
-        nrr: float=0.05,
+        nrr: float=0.5,
         nr_threshold: float=0.01,
         max_epochs: int=100,
         denoise_y: bool=True,
@@ -571,9 +608,22 @@ class DenoGrad():
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
         Decrease the noise level in the input data (x and y).
+
+        Each step is scaled by the sample's own residual, so how far a point
+        moves reflects how far it sits from what the network models.
+
+        Args:
+            nrr (float): noise reduction rate. The fraction of the distance to
+                the model's consistency surface that a sample closes per epoch,
+                so it is dimensionless: nrr=1.0 lands on the surface in a single
+                step. Values between 0.3 and 0.9 converge in a handful of epochs.
+            nr_threshold (float): samples whose residual falls below this are
+                left alone; the loop stops once no sample exceeds it.
         """
         return self._transform(
-             nrr, nr_threshold, max_epochs, batch_size, save_gradients, denoise_y
+            nrr=nrr, nr_threshold=nr_threshold, max_epochs=max_epochs,
+            batch_size=batch_size, save_gradients=save_gradients,
+            denoise_y=denoise_y
         )
 
     def fit_transform(
@@ -582,9 +632,10 @@ class DenoGrad():
         y: Union[np.ndarray, torch.Tensor, list, str] = None,
         is_ts: bool = False,
         window_size: int = None,
+        future: int = 1,
         stride: int = 1,
         flattening: bool = False,
-        nrr: float=0.05,
+        nrr: float=0.5,
         nr_threshold: float=0.01,
         max_epochs: int=100,
         denoise_y: bool=True,
@@ -593,8 +644,13 @@ class DenoGrad():
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
         Fit the model to the input data and decrease the noise level in the input data (x and y).
+
+        See transform() for the meaning of nrr and nr_threshold.
         """
-        self.fit(X, y, is_ts, window_size, stride, flattening)
+        self.fit(X, y, is_ts=is_ts, window_size=window_size, future=future,
+                 stride=stride, flattening=flattening)
         return self._transform(
-             nrr, nr_threshold, max_epochs, batch_size, save_gradients, denoise_y
+            nrr=nrr, nr_threshold=nr_threshold, max_epochs=max_epochs,
+            batch_size=batch_size, save_gradients=save_gradients,
+            denoise_y=denoise_y
         )

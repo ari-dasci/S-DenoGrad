@@ -25,7 +25,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="denograd",
-    version="1.0.2",
+    version="1.1.0b1",
     author="JJavier98",
     description="Instance noise reduction framework based on Deep Learning gradients agnostic to \
         the network architecture.",
