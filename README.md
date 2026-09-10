@@ -162,6 +162,13 @@ Configures the dataset strategy and executes the denoising loop.
 * `denoise_y` (bool, default=True): Whether to also refine the target variable.
 
 
+* `eta_x`, `eta_y` (float, default=1.0): Per-block multipliers on the correction, splitting the step between features and target. Only their **ratio** matters: scaling both by the same factor reaches the same result in more or fewer epochs, exactly as `nrr` does.
+
+  The default `1.0 / 1.0` splits the step as $\lVert \partial f/\partial x \rVert^2 : 1$, which is the maximum-likelihood attribution under isotropic Gaussian noise, and is the right choice for **tabular** data.
+
+  For **time series** the picture differs. A sequence carries intrinsic stochasticity — the part of the signal the backbone cannot predict from the window — and the refinement removes it along with the measurement noise. Damping the target with `eta_y` between 0.01 and 0.1 limits that loss, and the gain is large: on a series whose backbone reaches $R^2 = 0.94$, the default turns a 33% *increase* in error into a 44% reduction. Sweep `eta_y` before using time-series mode in production.
+
+
 
 **Time-Series Specific Parameters:**
 

@@ -254,7 +254,9 @@ class DenoGrad():
         max_epochs: int=100,
         batch_size: int=1000,
         save_gradients: bool=True,
-        denoise_y: bool=True
+        denoise_y: bool=True,
+        eta_x: float=1.0,
+        eta_y: float=1.0
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """Generic transform loop."""
         if self._dataset is None:
@@ -426,7 +428,7 @@ class DenoGrad():
                     while mask_apply_x.ndim < grad_x.ndim:
                         mask_apply_x = np.expand_dims(mask_apply_x, axis=-1)
                         step_x = np.expand_dims(step_x, axis=-1)
-                    adjustment_x = grad_x * step_x * mask_apply_x
+                    adjustment_x = grad_x * step_x * mask_apply_x * eta_x
 
                     # 2. Adjustment for Y (Only if requested and available)
                     adjustment_y = None
@@ -436,7 +438,7 @@ class DenoGrad():
                         while mask_apply_y.ndim < grad_y.ndim:
                             mask_apply_y = np.expand_dims(mask_apply_y, axis=-1)
                             step_y = np.expand_dims(step_y, axis=-1)
-                        adjustment_y = grad_y * step_y * mask_apply_y
+                        adjustment_y = grad_y * step_y * mask_apply_y * eta_y
 
                     # 4. Accumulate Updates (Do NOT apply in-place yet)
                     indices_np = indices.numpy()
@@ -604,7 +606,9 @@ class DenoGrad():
         max_epochs: int=100,
         denoise_y: bool=True,
         batch_size: int=1000,
-        save_gradients: bool=True
+        save_gradients: bool=True,
+        eta_x: float=1.0,
+        eta_y: float=1.0
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
         Decrease the noise level in the input data (x and y).
@@ -619,11 +623,19 @@ class DenoGrad():
                 step. Values between 0.3 and 0.9 converge in a handful of epochs.
             nr_threshold (float): samples whose residual falls below this are
                 left alone; the loop stops once no sample exceeds it.
+            eta_x, eta_y (float): per-block multipliers on the correction. Only
+                their RATIO changes where the refinement lands: scaling both by
+                the same factor reaches the same fixed point in more (or fewer)
+                epochs, exactly as nrr does. The default 1.0/1.0 splits the step
+                as ||df/dx||^2 : 1 between features and target, which is the
+                maximum-likelihood attribution under isotropic Gaussian noise.
+                Raise eta_x/eta_y to push more of the correction onto X, at the
+                cost of overshooting the one direction the backbone can observe.
         """
         return self._transform(
             nrr=nrr, nr_threshold=nr_threshold, max_epochs=max_epochs,
             batch_size=batch_size, save_gradients=save_gradients,
-            denoise_y=denoise_y
+            denoise_y=denoise_y, eta_x=eta_x, eta_y=eta_y
         )
 
     def fit_transform(
@@ -640,17 +652,19 @@ class DenoGrad():
         max_epochs: int=100,
         denoise_y: bool=True,
         batch_size: int=1000,
-        save_gradients: bool=True
+        save_gradients: bool=True,
+        eta_x: float=1.0,
+        eta_y: float=1.0
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
         Fit the model to the input data and decrease the noise level in the input data (x and y).
 
-        See transform() for the meaning of nrr and nr_threshold.
+        See transform() for the meaning of nrr, nr_threshold, eta_x and eta_y.
         """
         self.fit(X, y, is_ts=is_ts, window_size=window_size, future=future,
                  stride=stride, flattening=flattening)
         return self._transform(
             nrr=nrr, nr_threshold=nr_threshold, max_epochs=max_epochs,
             batch_size=batch_size, save_gradients=save_gradients,
-            denoise_y=denoise_y
+            denoise_y=denoise_y, eta_x=eta_x, eta_y=eta_y
         )
