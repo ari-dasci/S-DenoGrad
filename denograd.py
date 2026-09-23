@@ -2,12 +2,18 @@
 This module reduces the noise level of the input data of a Neural Network
 """
 from typing import Tuple, Union
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 import copy
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import Dataset
 from tqdm import tqdm
+
+try:
+    __version__ = _pkg_version("denograd")
+except PackageNotFoundError:          # ejecutado desde el repo, sin instalar
+    __version__ = "0.0.0.dev0"
 
 
 class DenoGrad():

@@ -1,3 +1,52 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "denograd"
+version = "1.2.0"
+description = "Model-agnostic instance-level noise reduction driven by the gradients of a trained network."
+readme = { file = "README.md", content-type = "text/markdown" }
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "JJavier98" }]
+keywords = [
+    "denoising",
+    "data-refinement",
+    "label-noise",
+    "gradient-based",
+    "time-series",
+    "tabular-data",
+    "machine-learning",
+]
+# El modulo en si es compatible con 3.6, pero torch y numpy actuales exigen 3.9+.
+# Declarar menos seria un metadato inexacto que invita a instalaciones que fallan
+# al resolver dependencias, no a instalaciones que funcionan.
+requires-python = ">=3.9"
+# Solo lo que el modulo importa de verdad. `matplotlib` e `ipython` figuraban
+# aqui desde 0.1.x y no aparecen ni una vez en denograd.py: obligaban a instalar
+# IPython entero para usar la libreria.
+dependencies = [
+    "numpy",
+    "torch",
+    "tqdm",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/JJavier98/DenoGrad"
+Repository = "https://github.com/JJavier98/DenoGrad"
+Changelog = "https://github.com/JJavier98/DenoGrad/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+py-modules = ["denograd"]
