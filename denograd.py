@@ -4,6 +4,7 @@ This module reduces the noise level of the input data of a Neural Network
 from typing import Tuple, Union
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 import copy
+import warnings
 import numpy as np
 import torch
 from torch import nn
@@ -14,6 +15,19 @@ try:
     __version__ = _pkg_version("denograd")
 except PackageNotFoundError:          # ejecutado desde el repo, sin instalar
     __version__ = "0.0.0.dev0"
+
+
+_TS_STRATEGIES = ("global", "window")
+
+
+def _align_shapes(out: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Drop a trailing singleton so that model output and target line up."""
+    if out.shape != y.shape:
+        if out.ndim == y.ndim + 1:
+            out = out.squeeze(-1)
+        elif y.ndim == out.ndim + 1:
+            y = y.squeeze(-1)
+    return out, y
 
 
 class DenoGrad():
@@ -117,6 +131,9 @@ class DenoGrad():
         self._dataset: Dataset = None
         self._is_ts: bool = False
         self._is_cnn: bool = False
+        # Columns of X that ARE the target (autoregressive series), or None when
+        # y is a separate array. The global strategy refines them as one variable.
+        self._target_idx: list = None
 
         # First *leaf* layer: model.modules() yields the container itself first,
         # so we skip anything that still has children.
@@ -257,24 +274,215 @@ class DenoGrad():
         self,
         nrr: float=0.5,
         nr_threshold: float=0.01,
-        max_epochs: int=100,
+        max_epochs: int=None,
         batch_size: int=1000,
         save_gradients: bool=True,
         denoise_y: bool=True,
         eta_x: float=1.0,
-        eta_y: float=1.0
+        eta_y: float=1.0,
+        ts_strategy: str="global",
+        lam: float=1.0,
+        lr: float=0.05,
+        tol: float=1e-7
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
-        """Generic transform loop."""
+        """Dispatch to the step rule that fits the data, and check the model."""
         if self._dataset is None:
             raise RuntimeError("You must call .fit() before .transform()")
+        if ts_strategy not in _TS_STRATEGIES:
+            raise ValueError(f"ts_strategy must be one of {_TS_STRATEGIES}, "
+                             f"got {ts_strategy!r}")
 
-        # TODO: Enforce rule?
-        # No Y denoising for Time Series
-        # Usually Y is future values or implicit in X
-        # But it could be a sequence target
-        # if self._is_ts:
-        #      denoise_y = False
+        use_global = self._is_ts and ts_strategy == "global"
+
+        # Each rule silently ignores the other's knobs, which is exactly how a
+        # result gets produced with settings that never took effect.
+        if use_global:
+            ignored = {"nrr": (nrr, 0.5), "nr_threshold": (nr_threshold, 0.01),
+                       "eta_x": (eta_x, 1.0), "eta_y": (eta_y, 1.0)}
+        else:
+            ignored = {"lam": (lam, 1.0), "lr": (lr, 0.05), "tol": (tol, 1e-7)}
+        changed = [k for k, (v, d) in ignored.items() if v != d]
+        if changed:
+            rule = "ts_strategy='global'" if use_global else "the Gauss-Newton step"
+            warnings.warn(f"{', '.join(changed)} have no effect under {rule}.",
+                          stacklevel=3)
+
+        if max_epochs is None:
+            max_epochs = 300 if use_global else 100
+
         initial_state_dict = copy.deepcopy(self._model.state_dict())
+        if use_global:
+            result = self._transform_global(
+                lam=lam, lr=lr, max_epochs=max_epochs, tol=tol,
+                batch_size=batch_size, save_gradients=save_gradients,
+                denoise_y=denoise_y
+            )
+        else:
+            result = self._transform_gauss_newton(
+                nrr=nrr, nr_threshold=nr_threshold, max_epochs=max_epochs,
+                batch_size=batch_size, save_gradients=save_gradients,
+                denoise_y=denoise_y, eta_x=eta_x, eta_y=eta_y
+            )
+
+        final_state_dict = self._model.state_dict()
+        weights_changed = any(not torch.equal(initial_state_dict[k],
+                                              final_state_dict[k]) for k in initial_state_dict)
+        if weights_changed:
+            print("WARNING: Model weights CHANGED during denoising!")
+        else:
+            print("SUCCESS: Model weights remained UNCHANGED during denoising.")
+
+        return result
+
+
+    def _transform_global(
+        self,
+        lam: float,
+        lr: float,
+        max_epochs: int,
+        tol: float,
+        batch_size: int,
+        save_gradients: bool,
+        denoise_y: bool
+    ) -> Tuple[np.ndarray, np.ndarray, list, list]:
+        """
+        Refine the whole series at once by gradient descent on
+
+            criterion(f(windows), targets)  +  lam * mean((z - z_observed)^2)
+
+        where z is every value being refined. The series is a single tensor and
+        the windows are views of it, so one backward pass gives each timestep
+        the SUM of the contributions of every window that contains it: the
+        chain rule does the consensus, with no accumulator and no counter. When
+        the target is a column of X (`target_cols`), it is literally the same
+        variable and receives its input and target contributions together.
+
+        With stride 1 there are T constraints for T x C unknowns, so the fit
+        term alone is underdetermined; the proximity term picks, among the
+        series the model finds self-consistent, the one closest to what was
+        observed. Both terms are means, so `lam` keeps its meaning across series
+        lengths, provided the criterion averages (reduction='mean').
+        """
+        ds = self._dataset
+        n_win = len(ds)
+        if n_win == 0:
+            raise ValueError(
+                f"Series too short: {len(ds.X)} steps cannot hold one window of "
+                f"{ds.window_size} plus {ds.future} step(s) ahead."
+            )
+        shared = self._target_idx is not None
+        if shared and ds.X.ndim != 2:
+            raise ValueError("target_cols requires X of shape (T, n_features).")
+
+        dev = self._device
+        x_obs = torch.as_tensor(self._x_storage, dtype=torch.float32, device=dev)
+        x = x_obs.clone().requires_grad_(True)
+        refined = [(x, x_obs)]
+        y = None
+        if not shared:
+            y_obs = torch.as_tensor(self._y_storage, dtype=torch.float32, device=dev)
+            y = y_obs.clone().requires_grad_(denoise_y)
+            if denoise_y:
+                refined.append((y, y_obs))
+        n_refined = sum(v.numel() for v, _ in refined)
+
+        # Target of window s is step s*stride + window_size + future - 1, the
+        # same one _SlidingWindowDataset hands the Gauss-Newton rule.
+        starts = torch.arange(n_win, device=dev) * ds.stride
+        tgt_idx = starts + ds.window_size + ds.future - 1
+        batch_size = min(batch_size, n_win)
+
+        opt = torch.optim.Adam([v for v, _ in refined], lr=lr)
+        x_gradient_list = []
+        y_gradient_list = []
+        prev = None
+        epoch = 0
+
+        # The model is frozen: only the data moves. Switching its parameters off
+        # spares a backward into every weight; their flags are restored after.
+        trainable = [p for p in self._model.parameters() if p.requires_grad]
+        for p in trainable:
+            p.requires_grad_(False)
+        try:
+            with tqdm(total=max_epochs) as pbar:
+                while epoch < max_epochs:
+                    opt.zero_grad(set_to_none=True)
+                    fit_total = 0.0
+                    for c0 in range(0, n_win, batch_size):
+                        c1 = min(c0 + batch_size, n_win)
+                        # unfold puts the window axis last: (n, C, W) -> (n, W, C)
+                        wins = x.unfold(0, ds.window_size, ds.stride)[c0:c1].movedim(-1, 1)
+                        if ds.flattening:
+                            wins = wins.reshape(wins.shape[0], -1)
+                        if self._is_cnn and wins.ndim == 3:
+                            out = self._model(wins.transpose(1, 2))
+                        else:
+                            out = self._model(wins)
+                        if shared:
+                            tgt = x[tgt_idx[c0:c1]][:, self._target_idx]
+                        else:
+                            tgt = y[tgt_idx[c0:c1]]
+                        out, tgt = _align_shapes(out, tgt)
+                        # Weighted by the chunk's share, so the sum over chunks is
+                        # the criterion over all windows whatever batch_size is.
+                        loss_fit = self._criterion(out, tgt) * ((c1 - c0) / n_win)
+                        loss_fit.backward()
+                        fit_total += float(loss_fit.detach())
+
+                    sq = sum(((v - v0) ** 2).sum() for v, v0 in refined)
+                    loss_prox = lam * sq / n_refined
+                    loss_prox.backward()
+
+                    if shared and not denoise_y:
+                        # The target columns are part of X, so holding them
+                        # fixed means cancelling their gradient, not skipping y.
+                        x.grad[:, self._target_idx] = 0.0
+
+                    if save_gradients:
+                        x_gradient_list.append(x.grad.detach().cpu().numpy().copy())
+                        if y is not None and denoise_y:
+                            y_gradient_list.append(y.grad.detach().cpu().numpy().copy())
+
+                    opt.step()
+                    epoch += 1
+                    total = fit_total + float(loss_prox.detach())
+                    pbar.set_postfix(fit=f"{fit_total:.3g}", prox=f"{float(loss_prox):.3g}")
+                    pbar.update(1)
+                    if prev is not None and abs(prev - total) < tol:
+                        break
+                    prev = total
+        finally:
+            for p in trainable:
+                p.requires_grad_(True)
+
+        if epoch < max_epochs:
+            print(f"converged at epoch {epoch}")
+
+        x_ref = x.detach().cpu().numpy()
+        if shared:
+            y_ref = x_ref[:, self._target_idx].copy()
+        else:
+            y_ref = y.detach().cpu().numpy()
+        return x_ref, y_ref, x_gradient_list, y_gradient_list
+
+
+    def _transform_gauss_newton(
+        self,
+        nrr: float,
+        nr_threshold: float,
+        max_epochs: int,
+        batch_size: int,
+        save_gradients: bool,
+        denoise_y: bool,
+        eta_x: float,
+        eta_y: float
+    ) -> Tuple[np.ndarray, np.ndarray, list, list]:
+        """Per-sample Gauss-Newton steps; for series, averaged over windows."""
+        # Refine copies: the observed data stays as fitted, so every call to
+        # transform() starts from it rather than from the previous call's output.
+        self._dataset.X = self._x_storage.copy()
+        self._dataset.Y = self._y_storage.copy()
+
         x_gradient_list = []
         y_gradient_list = []
         epoch = 0
@@ -322,11 +530,7 @@ class DenoGrad():
                         out = self._model(x_tensor)
 
                     # Shape Alignment
-                    if out.shape != y_tensor.shape:
-                        if out.ndim == y_tensor.ndim + 1:
-                            out = out.squeeze(-1)
-                        elif y_tensor.ndim == out.ndim + 1:
-                            y_tensor = y_tensor.squeeze(-1)
+                    out, y_tensor = _align_shapes(out, y_tensor)
 
                     # 2. Loss & Backward
                     loss = self._criterion(out, y_tensor)
@@ -508,15 +712,7 @@ class DenoGrad():
         if epoch < max_epochs:
             print(f"converged at epoch {epoch}")
 
-        final_state_dict = self._model.state_dict()
-        weights_changed = any(not torch.equal(initial_state_dict[k],
-                                              final_state_dict[k]) for k in initial_state_dict)
-        if weights_changed:
-            print("WARNING: Model weights CHANGED during denoising!")
-        else:
-            print("SUCCESS: Model weights remained UNCHANGED during denoising.")
-
-        return self._x_storage, self._y_storage, x_gradient_list, y_gradient_list
+        return self._dataset.X, self._dataset.Y, x_gradient_list, y_gradient_list
 
 
     # Public methods
@@ -529,14 +725,15 @@ class DenoGrad():
         window_size: int = None,
         future: int = 1,
         stride: int = 1,
-        flattening: bool = False
+        flattening: bool = False,
+        target_cols: Union[int, list] = None
     ) -> 'DenoGrad':
         """
         Fit the model to the input data.
 
         Args:
             X: Input data. Can be numpy array, torch Tensor, or pandas DataFrame (if hasattr values)
-            y: Target data or Column specification. 
+            y: Target data or Column specification.
                - If X is DataFrame and y is list/str, these are column names in X to treat as target
                - Otherwise, array/tensor of targets.
             is_ts (bool): Whether data is Time Series.
@@ -544,9 +741,16 @@ class DenoGrad():
             future (int): Steps ahead to predict (Required if is_ts=True). Default 1.
             stride (int): Stride for sliding window.
             flattening (bool): Whether to flatten windows (e.g. for MLP on TS data).
-            is_cnn (bool): Whether model requires (B, C, L) format (often for 1D CNNs).
+            target_cols (int or list of int): positions of the columns of X
+                that ARE the target, as in autoregressive forecasting where the
+                target's history is an input channel. Pass it instead of `y`.
+                The global time-series strategy then refines each target value
+                once, as the single variable it is; a separate `y` array would
+                be a second, independent copy of it. Column names given as `y`
+                with a DataFrame `X` are treated the same way.
         """
         self._is_ts = is_ts
+        self._target_idx = None
 
         # 1. Uniform Data Conversion to Numpy
         def to_numpy(d):
@@ -558,8 +762,17 @@ class DenoGrad():
                 return d.values # Pandas support
             return np.array(d)
 
+        if target_cols is not None:
+            if y is not None:
+                raise ValueError("Pass either y or target_cols, not both.")
+            X_np = to_numpy(X)
+            if X_np.ndim != 2:
+                raise ValueError("target_cols requires X of shape (n_samples, n_features).")
+            idx = [target_cols] if np.isscalar(target_cols) else list(target_cols)
+            self._target_idx = [int(i) for i in idx]
+            Y_np = X_np[:, self._target_idx]
         # Handle Pandas "y is implicit in X" case
-        if hasattr(X, 'columns') and (isinstance(y, str) or isinstance(y, list)):
+        elif hasattr(X, 'columns') and (isinstance(y, str) or isinstance(y, list)):
             # Assume X is DataFrame
             if isinstance(y, str):
                 y = [y]
@@ -568,6 +781,7 @@ class DenoGrad():
             # But for denoising X, we usually keep all columns in X.
             # We just need Y for the loss.
             X_np = X.values
+            self._target_idx = [int(i) for i in X.columns.get_indexer(y)]
         else:
             X_np = to_numpy(X)
             Y_np = to_numpy(y)
@@ -580,8 +794,8 @@ class DenoGrad():
         # In TS, we assume Y is aligned with X (same temporal stamp) we'll apply future logic later
         assert len(X_np) == len(Y_np), "X and y must have the same number of samples."
 
-        # Work on our own float copies: the denoising loop mutates these
-        # buffers in place, and X_np/Y_np may be the caller's own arrays
+        # Work on our own float copies: they are the observed data every
+        # transform() starts from, and X_np/Y_np may be the caller's own arrays
         # (or of an integer dtype that cannot absorb a float update).
         self._x_storage = np.array(X_np, dtype=np.float32)
         self._y_storage = np.array(Y_np, dtype=np.float32)
@@ -609,20 +823,60 @@ class DenoGrad():
         self,
         nrr: float=0.5,
         nr_threshold: float=0.01,
-        max_epochs: int=100,
+        max_epochs: int=None,
         denoise_y: bool=True,
         batch_size: int=1000,
         save_gradients: bool=True,
         eta_x: float=1.0,
-        eta_y: float=1.0
+        eta_y: float=1.0,
+        ts_strategy: str="global",
+        lam: float=1.0,
+        lr: float=0.05,
+        tol: float=1e-7
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
         Decrease the noise level in the input data (x and y).
 
-        Each step is scaled by the sample's own residual, so how far a point
-        moves reflects how far it sits from what the network models.
+        Every call starts from the data passed to fit(), so transform() can be
+        run several times on one fit to compare settings.
+
+        Tabular data (and series with ts_strategy='window') take per-sample
+        Gauss-Newton steps, each scaled by the sample's own residual, so how far
+        a point moves reflects how far it sits from what the network models.
+        Series with ts_strategy='global' (the default) are refined as a whole;
+        see ts_strategy below.
 
         Args:
+            max_epochs (int): maximum number of refinement iterations. Defaults
+                to 100 for the Gauss-Newton step and 300 for the global one.
+            denoise_y (bool): whether to refine the target as well. Under the
+                global strategy with `target_cols`, False holds the target
+                columns of X fixed while the other channels move.
+            batch_size (int): samples (or windows) per forward pass. Under the
+                global strategy it only bounds memory: the gradient is the same
+                whatever its value, up to floating-point rounding (which can
+                move the `tol` stop by an iteration).
+            save_gradients (bool): keep the per-iteration gradients and return
+                them.
+            ts_strategy (str): how a time series is refined.
+                'global' (default): the series is one tensor and the windows
+                are views of it, so the chain rule sums, for every timestep,
+                the contributions of all the windows that contain it. It
+                minimises criterion(f(windows), targets) + lam * mean((z -
+                z_observed)^2) over every refined value z with Adam.
+                'window': the pre-2.0 rule. Each window takes its own
+                Gauss-Newton step and each timestep receives the average of the
+                steps of the windows covering it. Kept to reproduce earlier
+                results; it barely moves the data once the backbone fits well,
+                because every step is proportional to a small residual.
+                Ignored for tabular data.
+            lam (float): global strategy only. Weight of the proximity term,
+                which makes the underdetermined series problem well posed by
+                preferring the self-consistent series closest to the observed
+                one. Larger values keep the data closer to what was measured.
+            lr (float): global strategy only. Adam learning rate on the data.
+            tol (float): global strategy only. Stops once the total objective
+                changes by less than this between iterations.
             nrr (float): noise reduction rate. The fraction of the distance to
                 the model's consistency surface that a sample closes per epoch,
                 so it is dimensionless: nrr=1.0 lands on the surface in a single
@@ -637,11 +891,16 @@ class DenoGrad():
                 maximum-likelihood attribution under isotropic Gaussian noise.
                 Raise eta_x/eta_y to push more of the correction onto X, at the
                 cost of overshooting the one direction the backbone can observe.
+            nrr, nr_threshold, eta_x and eta_y belong to the Gauss-Newton step
+            and have no effect under ts_strategy='global'; lam, lr and tol have
+            none under the Gauss-Newton step. Setting one that does not apply
+            raises a warning.
         """
         return self._transform(
             nrr=nrr, nr_threshold=nr_threshold, max_epochs=max_epochs,
             batch_size=batch_size, save_gradients=save_gradients,
-            denoise_y=denoise_y, eta_x=eta_x, eta_y=eta_y
+            denoise_y=denoise_y, eta_x=eta_x, eta_y=eta_y,
+            ts_strategy=ts_strategy, lam=lam, lr=lr, tol=tol
         )
 
     def fit_transform(
@@ -653,24 +912,30 @@ class DenoGrad():
         future: int = 1,
         stride: int = 1,
         flattening: bool = False,
+        target_cols: Union[int, list] = None,
         nrr: float=0.5,
         nr_threshold: float=0.01,
-        max_epochs: int=100,
+        max_epochs: int=None,
         denoise_y: bool=True,
         batch_size: int=1000,
         save_gradients: bool=True,
         eta_x: float=1.0,
-        eta_y: float=1.0
+        eta_y: float=1.0,
+        ts_strategy: str="global",
+        lam: float=1.0,
+        lr: float=0.05,
+        tol: float=1e-7
     ) -> Tuple[np.ndarray, np.ndarray, list, list]:
         """
         Fit the model to the input data and decrease the noise level in the input data (x and y).
 
-        See transform() for the meaning of nrr, nr_threshold, eta_x and eta_y.
+        See fit() for target_cols and transform() for the rest.
         """
         self.fit(X, y, is_ts=is_ts, window_size=window_size, future=future,
-                 stride=stride, flattening=flattening)
+                 stride=stride, flattening=flattening, target_cols=target_cols)
         return self._transform(
             nrr=nrr, nr_threshold=nr_threshold, max_epochs=max_epochs,
             batch_size=batch_size, save_gradients=save_gradients,
-            denoise_y=denoise_y, eta_x=eta_x, eta_y=eta_y
+            denoise_y=denoise_y, eta_x=eta_x, eta_y=eta_y,
+            ts_strategy=ts_strategy, lam=lam, lr=lr, tol=tol
         )
