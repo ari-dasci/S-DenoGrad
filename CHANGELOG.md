@@ -3,6 +3,56 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.0] — 2026-09-30
+
+### Changed — BREAKING
+
+- **Time series are refined globally by default.** The series is now a single
+  tensor and the windows are views of it, so one backward pass gives each time
+  step the *sum* of the contributions of every window containing it (the chain
+  rule), and the data is optimised with Adam against
+
+      criterion(f(windows), targets) + lam * mean((z - z_observed)^2)
+
+  The proximity term is what makes the problem well posed: with stride 1 there
+  is one constraint per time step and one unknown per channel and step.
+
+  The previous rule — a Gauss-Newton step per window, averaged over the windows
+  covering each time step — scaled every step by that window's residual, so a
+  backbone that fits well left the data almost where it was. Dividing by the
+  window count is also not the derivative of anything, and it shrank the
+  interior of the series relative to its edges. On the benchmarks of the
+  accompanying study the global rule recovered 60–91 % of the injected noise on
+  four of five series where the window rule recovered under 2 %, at about a
+  fifth of its cost.
+
+  `is_ts=True` code written against 1.2.0 **runs without error under the new
+  rule**. Pass `ts_strategy="window"` to reproduce 1.2.0 results; `nrr`,
+  `nr_threshold`, `eta_x` and `eta_y` have no effect under the global rule, and
+  setting any of them there raises a warning. Tabular refinement is unchanged.
+
+- `max_epochs` now defaults to `None`, which resolves to 100 for the
+  Gauss-Newton step (unchanged) and 300 for global refinement.
+
+### Added
+
+- `ts_strategy` (`"global"` | `"window"`), and `lam`, `lr` and `tol` for the
+  global rule.
+- `fit(target_cols=...)`: declares that the target *is* one or more columns of
+  `X`, the usual autoregressive setup. Global refinement then refines each
+  target value once, as the single variable it is, instead of an independent
+  copy passed as `y`. Column names passed as `y` with a DataFrame `X` are
+  treated the same way. With `denoise_y=False` these columns are held fixed —
+  under the window rule that flag cannot protect a target that is also an input
+  channel.
+
+### Fixed
+
+- `transform()` refined the fitted data in place, so a second call started from
+  the first call's output, overwrote the array that call had returned, and left
+  `x_noisy` holding refined data. Every call now starts from the data passed to
+  `fit()`, which is what fitting once and sweeping settings requires.
+
 ## [1.2.0] — 2026-09-23
 
 First stable release of the Gauss-Newton step rule. It supersedes the `1.1.0b1`
