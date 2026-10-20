@@ -11,7 +11,7 @@ In the Data-Centric AI paradigm, traditional denoising often compromises data in
 * **Model-Agnostic:** Works with any differentiable PyTorch model (MLP, LSTM, CNN, Transformers, TabPFN, etc.).
 * **No Clean Ground Truth Required:** Operates via self-supervised input optimization on the noisy dataset itself.
 * **Dual Domain Support:** Specialized handling for both **Static Tabular** data and **Time-Series** (refined globally, with the chain rule summing each time step's contributions across windows).
-* **Manifold Preservation:** Achieves state-of-the-art error reduction while maintaining high structural fidelity (minimal $D_{KL}$ and high feature correlation).
+* **Faithful Refinement:** Moves each sample toward the relationship learned by the backbone, in proportion to its own error, so most of the target noise is removed while the input features stay close to what was observed.
 
 ---
 
@@ -118,7 +118,7 @@ Traditional training updates weights ($\theta$) to minimize loss. DenoGrad inver
 $$x_{new} \leftarrow x - \eta \cdot \frac{|r|}{\lVert g \rVert} \cdot \frac{\nabla \mathcal{L}}{\lVert \nabla \mathcal{L} \rVert}$$
 
 The gradient supplies the *direction*, while the step *length* is set by how far the sample sits
-from the surface where the model is self-consistent, $\{f_\theta(x) = y\}$. With
+from the surface where the model is self-consistent, $\lbrace f_\theta(x) = y \rbrace$. With
 $r = f_\theta(x) - y$ the residual and $g = (\partial f_\theta/\partial x, -1)$, that distance is
 $|r| / \lVert g \rVert$. A point far from what the network models is corrected hard; one that
 already sits close is barely touched. Because $\lVert \nabla \mathcal{L} \rVert \ge \lVert \nabla_y \mathcal{L} \rVert$,
@@ -135,7 +135,7 @@ the step can never exceed the residual itself, so no sample can overshoot.
 
 4. **Global Refinement (Time-Series):** A series is refined as a whole rather than window by window. With $z$ every value being refined and $z_{obs}$ its observed value, DenoGrad runs Adam on
 
-   $$\min_z \; \mathcal{L}\big(f_\theta(\text{windows}(z)),\ \text{targets}(z)\big) + \lambda \cdot \operatorname{mean}\big((z - z_{obs})^2\big)$$
+   $$\min_z \quad \mathcal{L}\big(f_\theta(\text{windows}(z)),\ \text{targets}(z)\big) + \lambda \cdot \operatorname{mean}\big((z - z_{obs})^2\big)$$
 
    Because the windows are views of one tensor, $\partial \mathcal{L} / \partial z_t$ is the sum of the contributions of every window containing $t$, and a target that is also an input channel receives both of its roles at once. With stride 1 there is one constraint per time step but one unknown per channel and step, so the fit term alone admits many solutions; the proximity term chooses, among the series the model finds self-consistent, the one closest to what was observed.
 
@@ -203,13 +203,16 @@ Under global refinement, `batch_size` only bounds memory: the windows are proces
 
 ## 📄 Citation
 
-If you use DenoGrad in your research, please cite our paper:
-
+The paper describing DenoGrad is under review. Until it is published, please cite the software. GitHub's *Cite this repository* button, built from [`CITATION.cff`](CITATION.cff), gives the reference in APA and BibTeX formats:
 
 ```bibtex
-
-ON REVISION
-
+@software{alonso_ramos_denograd,
+  author  = {Alonso-Ramos, J. Javier and Aguilera-Martos, Ignacio and Herrera, Francisco and Herrera-Poyatos, Andr\'{e}s},
+  title   = {DenoGrad: A Gradient-Based Framework for Data Refinement in Tabular and Time-Series Learning},
+  version = {2.0.0},
+  year    = {2026},
+  url     = {https://github.com/ari-dasci/S-DenoGrad}
+}
 ```
 
 ---
