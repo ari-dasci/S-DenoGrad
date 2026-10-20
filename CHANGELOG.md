@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **License changed from AGPL-3.0-or-later to Apache-2.0.** Versions up to and
+  including 2.0.0 remain available under AGPL-3.0-or-later.
+
 ## [2.0.0] — 2026-09-30
 
 ### Changed — BREAKING

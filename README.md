@@ -1,7 +1,7 @@
 # DenoGrad: A Model-Agnostic Framework for Gradient-Based Data Refinement
 
 [![PyPI version](https://badge.fury.io/py/denograd.svg)](https://badge.fury.io/py/denograd)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 **DenoGrad** is a novel, model-agnostic framework designed to reduce noise in both input features and target variables by leveraging the gradients of a pre-trained Deep Learning model.
 
@@ -225,4 +225,4 @@ This work was supported by the **University of Granada** and the **Andalusian In
 
 ## 📝 License
 
-This project is licensed under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later) - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details. Versions up to 2.0.0 were released under the GNU Affero General Public License v3.0 or later.
